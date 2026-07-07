@@ -22,14 +22,19 @@ Two graphics modes, toggled with `v` (or from the main menu, persisted):
 fire, day/night lighting, and campfire glow — and **ASCII** — the classic
 character-grid look. Full **controller support** via the Gamepad API.
 
-## Run it
+![HEARTHFALL](public/og.png)
+
+## Run it locally
 
 ```sh
-python3 -m http.server 8137 -d hearthfall
-# then open http://localhost:8137
+pnpm install
+pnpm dev        # vite, defaults to http://localhost:8137
 ```
 
-(Any static file server works — ES modules just can't load from file://.)
+npm works too (`npm install && npm run dev`). Node 20+. Other scripts:
+`pnpm build` (production bundle), `pnpm lint`, `pnpm check` (typecheck via
+JSDoc + tsc). No frameworks, no runtime dependencies — plain ES modules
+drawn onto one canvas.
 
 ## The loop
 
@@ -117,14 +122,23 @@ raid; a camp left standing grows bolder and feeds bigger raids.
 
 ## Code map
 
-- `js/game.js` — state, time, pathfinding, settler/raider AI, economy, trader, save/load
-- `js/world.js` — overworld generation, expeditions, quest resolution
-- `js/meta.js` — persistent legacy points, perks, run records
-- `js/render.js` — every screen drawn into one ASCII cell buffer, then painted
+- `js/game.js` — the sim: state, time, seasons, morale, pathfinding, settler/raider AI, economy, the Elder's counsel, save/load
+- `js/world.js` — overworld generation, scouting, expeditions
+- `js/meta.js` — persistent legacy points, perks, lifetime records
+- `js/screens.js` — every screen and modal, declarative widgets over the cell buffer
+- `js/mapdraw.js` — the classic ASCII world renderer + shared map UI helpers
 - `js/tiles.js` — the sprite mode: procedural pixel-art atlas + lighting
+- `js/gfx.js` — the compositor: one character-cell buffer over a canvas
+- `js/portrait.js` — pixel-art elder portraits for the advisor window
+- `js/mobile.js` — the phone landing page, drawn with the game's own art
 - `js/gamepad.js` — Gamepad API polling mapped onto the shared key handler
-- `js/ui.js` / `js/main.js` — input routing and the fixed-step game loop
+- `js/ui.js` / `js/main.js` — screen stack, input routing, fixed-step loop
 - `js/map.js`, `js/data.js`, `js/rng.js` — mapgen, content tables, RNG
 
 Debug console: `G` is the game state, `ff(minutes)` fast-forwards the sim,
 `GAME`/`WORLD`/`META_M` expose the modules.
+
+## Contributing & license
+
+MIT — see [LICENSE](LICENSE). Issues and PRs welcome; keep changes small
+and playtest with `ff()` before opening one.
