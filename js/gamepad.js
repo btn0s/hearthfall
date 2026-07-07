@@ -12,8 +12,9 @@
 //   LT/RT (6/7)         game speed down / up
 //   Back (8)            help · Start (9) pause
 //   R3 (11)             toggle graphics mode
-import { handleKey } from './ui.js';
+import { dispatchKey } from './ui.js';
 import { notice } from './game.js';
+const handleKey = (k) => dispatchKey(k, {});
 
 const held = {}, nextT = {};
 

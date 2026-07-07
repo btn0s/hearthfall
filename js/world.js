@@ -150,7 +150,7 @@ function arriveHome(e, loc) {
 }
 
 export function tickWorld() {
-  if (G.screen !== 'GAME' || G.gameOver) return;
+  if (!G.tiles || G.gameOver) return;
   for (const e of [...G.expeditions]) {
     e.t--;
     if (e.t > 0) continue;

@@ -1,0 +1,787 @@
+// Every screen and modal, defined declaratively over the ui.js stack.
+// Layout is computed from game state (never from draw side effects), so
+// clicking, focus, and drawing always agree.
+import {
+  G, tileAt, inMap, timeStr, communeTier, hasSave, loadGame, newGame, save,
+  adjustedOffer, doTrade, tryPlaceBuild, designate, cancelAt, queueCraft, cycleRole,
+  notice, tip, centerCam,
+} from './game.js';
+import {
+  MAP_W, MAP_H, VIEW_W, VIEW_H, T, BUILDS, COST_ABBR, ROLE_COLORS, ROLE_LETTER,
+  LOCTYPES, CIVS, PERKS, TRADE, OBJECTIVES, INTRO,
+} from './data.js';
+import { WORLD_W, WORLD_H, partyPower, riskLabel, genWorld, startExpedition } from './world.js';
+import { META, hasPerk, buyPerk } from './meta.js';
+import { drawMapTiles } from './tiles.js';
+import { drawWorldAscii, MM_COL, inspectText, panCam } from './mapdraw.js';
+import * as gfx from './gfx.js';
+import { push, pop, replaceAll, drawWidgets, focusedWidget } from './ui.js';
+
+const { GRID_W, GRID_H, PANEL_BG, put, str, fillBg, dim, GFX, MM, toggleGfx, toggleMinimap } = gfx;
+const SB_X = 74;
+const LOG_Y = VIEW_H + 1;
+
+// ---------------------------------------------------------------- shared bits
+const FONT = {
+  H: ['█ █', '█ █', '███', '█ █', '█ █'],
+  E: ['███', '█  ', '██ ', '█  ', '███'],
+  A: ['███', '█ █', '███', '█ █', '█ █'],
+  R: ['██ ', '█ █', '██ ', '█ █', '█ █'],
+  T: ['███', ' █ ', ' █ ', ' █ ', ' █ '],
+  F: ['███', '█  ', '██ ', '█  ', '█  '],
+  L: ['█  ', '█  ', '█  ', '█  ', '███'],
+};
+function drawBig(x0, y0, word, colors) {
+  let x = x0;
+  for (const c of word) {
+    const glyph = FONT[c];
+    if (glyph) {
+      for (let r = 0; r < 5; r++) {
+        for (let i = 0; i < glyph[r].length; i++) {
+          if (glyph[r][i] !== ' ') put(x + i, y0 + r, '█', colors[r]);
+        }
+      }
+    }
+    x += 4;
+  }
+}
+
+function drawNotice() {
+  if (G.notice && G.notice.until > performance.now()) {
+    const t = ' ' + G.notice.text + ' ';
+    str(Math.max(0, ((VIEW_W - t.length) / 2) | 0), VIEW_H - 1, t, '#ffd870', '#402018');
+  }
+}
+
+function drawTip() {
+  if (!G.tip || G.tip.until < performance.now()) return;
+  const maxw = 54;
+  const words = G.tip.text.split(' ');
+  const lines = [];
+  let cur = '';
+  for (const w of words) {
+    if ((cur + ' ' + w).trim().length > maxw) { lines.push(cur.trim()); cur = w; }
+    else cur += ' ' + w;
+  }
+  if (cur.trim()) lines.push(cur.trim());
+  const bw = Math.max(...lines.map(l => l.length), 12) + 4;
+  const x0 = Math.max(1, ((VIEW_W - bw) / 2) | 0);
+  fillBg(x0, 1, bw, lines.length + 2, '#241c08');
+  str(x0 + 1, 1, '☼ TIP', '#ffd860', '#241c08');
+  str(x0 + bw - 6, 1, 'Esc ✕', '#8a7a50', '#241c08');
+  lines.forEach((l, i) => str(x0 + 2, 2 + i, l, '#e8d8b0', '#241c08'));
+}
+
+export function beginRun(civId) {
+  newGame(civId);
+  genWorld();
+  replaceAll(makeGameScreen());
+  push(makeIntroModal());
+}
+
+// ---------------------------------------------------------------- title screens
+export function makeMenuScreen() {
+  const ox = ((GRID_W - 34) / 2) | 0;
+  const items = [
+    { key: 'n', label: () => 'New Game', fg: '#e8d8a0', act: () => push(makeCivScreen()) },
+    {
+      key: 'c', label: () => hasSave() ? 'Continue' : 'Continue  (no save)',
+      fg: '#e8d8a0', disabled: () => !hasSave(),
+      act: () => { if (hasSave()) { if (loadGame()) replaceAll(makeGameScreen()); else notice('Save was corrupted'); } },
+    },
+    { key: 'l', label: () => `Legacy Perks   ◆${META.points}`, fg: '#c8a0e8', act: () => push(makeLegacyScreen()) },
+    { key: 'v', label: () => `Graphics: ${GFX.mode === 'tiles' ? 'Tiles' : 'ASCII'}`, fg: '#9ac0d8', act: () => toggleGfx() },
+    { key: '?', label: () => 'How to play', fg: '#8a94a2', act: () => push(makeHelpModal()) },
+  ];
+  const scr = {
+    id: 'menu', modal: false, focus: 0,
+    widgets: items.map((it, i) => ({
+      rect: { x: ox - 2, y: 15 + i * 2, w: 38, h: 1 },
+      focusable: true,
+      disabled: it.disabled,
+      onActivate: it.act,
+      draw(w, focused) {
+        const dis = it.disabled && it.disabled();
+        if (focused) fillBg(w.rect.x, w.rect.y, w.rect.w, 1, '#1c2230');
+        str(w.rect.x, w.rect.y, focused ? '►' : ' ', '#ffd860', focused ? '#1c2230' : undefined);
+        str(ox, w.rect.y, `${it.key})  ${it.label()}`, dis ? '#5a5f6a' : (focused ? '#ffe8a0' : it.fg), focused ? '#1c2230' : undefined);
+      },
+    })),
+    keymap: Object.fromEntries(items.map(it => [it.key, it.act])),
+    draw(f) {
+      const flame = ['#ffdf70', '#ffc050', '#ff9030', '#e06020', '#b04818'];
+      put((GRID_W / 2) | 0, 3, '‼', flame[(f >> 3) % 3]);
+      drawBig(((GRID_W - 39) / 2) | 0, 5, 'HEARTHFALL', flame);
+      str(((GRID_W - 42) / 2) | 0, 11, 'an ashes-and-embers commune survival sim', '#8a94a2');
+      drawWidgets(this, f);
+      str(((GRID_W - 40) / 2) | 0, GRID_H - 4,
+        `runs: ${META.runs}   best: ${META.bestDays} days   legacy: ◆${META.points}`, '#6a7484');
+      if (META.runs === 0) str(((GRID_W - 46) / 2) | 0, GRID_H - 2, 'every fall of the commune earns legacy to spend', '#4a5560');
+      drawNotice();
+    },
+  };
+  return scr;
+}
+
+export function makeCivScreen() {
+  const ox = 20;
+  const scr = {
+    id: 'civ', modal: false, focus: 0,
+    widgets: CIVS.map((c, i) => ({
+      rect: { x: ox - 2, y: 6 + i * 4, w: 62, h: 3 },
+      focusable: true,
+      onActivate: () => beginRun(c.id),
+      draw(w, focused) {
+        const bg = focused ? '#1c2230' : undefined;
+        if (focused) fillBg(w.rect.x, w.rect.y, w.rect.w, 3, '#1c2230');
+        str(w.rect.x, w.rect.y, focused ? '►' : ' ', '#ffd860', bg);
+        str(ox, w.rect.y, `${i + 1})  ${c.ch} ${c.name}`, focused ? '#ffe8a0' : c.fg, bg);
+        str(ox + 4, w.rect.y + 1, c.desc, '#8a94a2', bg);
+        str(ox + 4, w.rect.y + 2, c.desc2, '#8a94a2', bg);
+      },
+    })),
+    keymap: { Escape: () => pop() },
+    onKey(k) {
+      const i = +k - 1;
+      if (i >= 0 && i < CIVS.length) beginRun(CIVS[i].id);
+    },
+    draw(f) {
+      str(((GRID_W - 18) / 2) | 0, 2, 'CHOOSE YOUR PEOPLE', '#ffd860');
+      drawWidgets(this, f);
+      const perks = PERKS.filter(p => hasPerk(p.id));
+      if (perks.length) {
+        str(ox, 6 + CIVS.length * 4 + 1, `Legacy carried in: ${perks.map(p => p.name).join(' · ')}`.slice(0, 70), '#c8a0e8');
+      }
+      str(ox, GRID_H - 3, 'press 1-4 (or click) · Esc back', '#8a94a2');
+    },
+  };
+  return scr;
+}
+
+export function makeLegacyScreen() {
+  const ox = 18;
+  const scr = {
+    id: 'legacy', modal: false, focus: 0,
+    widgets: PERKS.map((p, i) => ({
+      rect: { x: ox - 2, y: 7 + i * 2, w: 70, h: 1 },
+      focusable: true,
+      onActivate: () => buyPerk(p.id),
+      draw(w, focused) {
+        const owned = hasPerk(p.id);
+        const afford = META.points >= p.cost;
+        if (focused) fillBg(w.rect.x, w.rect.y, w.rect.w, 1, '#1c2230');
+        const fg = owned ? '#8ad080' : afford ? '#e8d8a0' : '#5a5f6a';
+        str(w.rect.x, w.rect.y, focused ? '►' : ' ', '#ffd860', focused ? '#1c2230' : undefined);
+        str(ox, w.rect.y, `${i + 1}) ${p.name.padEnd(16)} ${owned ? '  OWNED' : `◆${p.cost}`.padStart(7)}   ${p.desc}`.slice(0, 66),
+          focused ? (owned ? '#8ad080' : '#ffe8a0') : fg, focused ? '#1c2230' : undefined);
+      },
+    })),
+    keymap: { Escape: () => pop() },
+    onKey(k) {
+      const i = +k - 1;
+      if (i >= 0 && i < PERKS.length) buyPerk(PERKS[i].id);
+    },
+    draw(f) {
+      str(((GRID_W - 12) / 2) | 0, 2, 'LEGACY PERKS', '#c8a0e8');
+      str(((GRID_W - 30) / 2) | 0, 4, `◆${META.points} legacy to spend — permanent, every run`, '#b8b2a0');
+      drawWidgets(this, f);
+      str(ox, GRID_H - 4, 'Legacy is earned when a run ends: days survived,', '#6a7484');
+      str(ox, GRID_H - 3, 'raids repelled, sites cleared, kills, peak population.', '#6a7484');
+      str(ox, GRID_H - 2, 'press a number to buy · Esc back', '#8a94a2');
+    },
+  };
+  return scr;
+}
+
+// ---------------------------------------------------------------- game screen
+const TOOL_MODES = ['NORMAL', 'BUILD', 'CHOP', 'MINE', 'FORAGE', 'CANCEL'];
+
+// single source of truth for sidebar row positions (draw + hit share this)
+function sidebarLayout() {
+  let y = 8; // 0-3 header block, 4-7 resources
+  if (G.raidActive) y++;
+  if (G.trader) y++;
+  if (G.craftQueue.length) y++;
+  const objY = y;
+  y += (G.objIdx < OBJECTIVES.length) ? 3 : 1;
+  const setHdrY = y;
+  const settlerY = y + 1;
+  const shown = Math.min(G.settlers.length, 14);
+  y = settlerY + shown;
+  const expedY = G.expeditions.length ? y : -1;
+  return { objY, setHdrY, settlerY, shown, expedY };
+}
+
+function hpBar(hp, max, w) {
+  const filled = Math.max(0, Math.min(w, Math.ceil(hp / max * w)));
+  const col = hp / max > 0.6 ? '#6ac060' : hp / max > 0.3 ? '#e0c060' : '#e05040';
+  return { filled, col };
+}
+
+function moveCursor(dx, dy) {
+  if (!inMap(G.cursor.x, G.cursor.y)) {
+    G.cursor.x = G.camp.x; G.cursor.y = G.camp.y;
+    centerCam(G.camp.x, G.camp.y);
+    return;
+  }
+  G.cursor.x = Math.max(0, Math.min(MAP_W - 1, G.cursor.x + dx));
+  G.cursor.y = Math.max(0, Math.min(MAP_H - 1, G.cursor.y + dy));
+  const m = 3;
+  if (G.cursor.x < G.cam.x + m) panCam(G.cursor.x - (G.cam.x + m), 0);
+  if (G.cursor.x > G.cam.x + VIEW_W - 1 - m) panCam(G.cursor.x - (G.cam.x + VIEW_W - 1 - m), 0);
+  if (G.cursor.y < G.cam.y + m) panCam(0, G.cursor.y - (G.cam.y + m));
+  if (G.cursor.y > G.cam.y + VIEW_H - 1 - m) panCam(0, G.cursor.y - (G.cam.y + VIEW_H - 1 - m));
+}
+
+function paintCell(x, y, isDrag) {
+  if (!inMap(x, y)) return;
+  if (G.mode === 'BUILD' && G.buildSel) tryPlaceBuild(x, y);
+  else if (G.mode === 'CHOP') designate(x, y, 'chop');
+  else if (G.mode === 'MINE') designate(x, y, 'mine');
+  else if (G.mode === 'FORAGE') designate(x, y, 'forage');
+  else if (G.mode === 'CANCEL') { if (!isDrag) cancelAt(x, y); }
+  else if (G.mode === 'NORMAL' && !isDrag) {
+    if (G.trader && G.trader.x === x && G.trader.y === y) { push(makeTradeModal()); return; }
+    const s = G.settlers.find(s => !s.away && s.x === x && s.y === y);
+    if (s) cycleRole(s);
+  }
+}
+
+function selectBuild(scr, def) {
+  if (!def) return;
+  if (def.craft) queueCraft(def);
+  else G.buildSel = def;
+}
+
+export function makeGameScreen() {
+  const scr = {
+    id: 'game', modal: false, listNav: false, focus: 0, buildFocus: 0,
+
+    widgets() {
+      const ws = [];
+      const lay = sidebarLayout();
+      G.settlers.slice(0, lay.shown).forEach((s, i) => {
+        ws.push({
+          rect: { x: SB_X, y: lay.settlerY + i, w: 25, h: 1 },
+          onClick: () => { const cur = G.settlers.find(x => x.id === s.id); if (cur) cycleRole(cur); },
+        });
+      });
+      if (MM.on) {
+        ws.push({
+          rect: { x: 1, y: VIEW_H - MM.h - 1, w: MM.w, h: MM.h },
+          onClick: (w, c) => {
+            centerCam((c.cx - w.rect.x + 0.5) * (MAP_W / MM.w), (c.cy - w.rect.y + 0.5) * (MAP_H / MM.h));
+          },
+        });
+      }
+      if (G.mode === 'BUILD') {
+        if (G.buildSel) {
+          ws.push({ rect: { x: 1, y: 1, w: 36, h: 1 }, onClick: () => { G.buildSel = null; } });
+        } else {
+          BUILDS.forEach((b, i) => {
+            ws.push({ rect: { x: 1, y: 2 + i, w: 36, h: 1 }, onClick: () => selectBuild(scr, b) });
+          });
+        }
+      }
+      return ws;
+    },
+
+    onKey(k, mods = {}) {
+      if (k === 'Escape' && G.tip) { G.tip = null; return; }
+      const P = 4;
+      if (k === 'PAN_LEFT' || (mods.shift && k === 'ArrowLeft')) return panCam(-P, 0);
+      if (k === 'PAN_RIGHT' || (mods.shift && k === 'ArrowRight')) return panCam(P, 0);
+      if (k === 'PAN_UP' || (mods.shift && k === 'ArrowUp')) return panCam(0, -P);
+      if (k === 'PAN_DOWN' || (mods.shift && k === 'ArrowDown')) return panCam(0, P);
+
+      if (G.mode === 'BUILD') {
+        if (/^[a-m]$/.test(k)) { selectBuild(scr, BUILDS.find(b => b.key === k)); return; }
+        if (!G.buildSel) {
+          if (k === 'ArrowUp') { scr.buildFocus = (scr.buildFocus + BUILDS.length - 1) % BUILDS.length; return; }
+          if (k === 'ArrowDown') { scr.buildFocus = (scr.buildFocus + 1) % BUILDS.length; return; }
+          if (k === 'Enter') { selectBuild(scr, BUILDS[scr.buildFocus]); return; }
+        }
+        if (k === 'Escape') {
+          if (G.buildSel) G.buildSel = null;
+          else G.mode = 'NORMAL';
+          return;
+        }
+      } else if (k === 'Escape') { G.mode = 'NORMAL'; G.buildSel = null; return; }
+
+      if (k === 'Q') { save(); replaceAll(makeMenuScreen()); return; }
+      if (k === ' ') { G.paused = !G.paused; return; }
+      if (k === '?') { push(makeHelpModal()); return; }
+      if (k === '1' || k === '2' || k === '3') { G.speed = +k; return; }
+      if (k === '-') { G.speed = Math.max(1, G.speed - 1); return; }
+      if (k === '=' || k === '+') { G.speed = Math.min(3, G.speed + 1); return; }
+      if (k === '[' || k === ']') {
+        const dir = k === ']' ? 1 : -1;
+        const i = TOOL_MODES.indexOf(G.mode);
+        G.mode = TOOL_MODES[((i < 0 ? 0 : i) + dir + TOOL_MODES.length) % TOOL_MODES.length];
+        G.buildSel = null;
+        return;
+      }
+      if (k === 'v') { toggleGfx(); return; }
+      if (k === 'n') { toggleMinimap(); return; }
+      if (G.mode !== 'BUILD') {
+        if (k === 'b') { G.mode = 'BUILD'; G.buildSel = null; return; }
+        if (k === 't') { G.mode = 'CHOP'; return; }
+        if (k === 'm') { G.mode = 'MINE'; return; }
+        if (k === 'g') { G.mode = 'FORAGE'; return; }
+        if (k === 'x') { G.mode = 'CANCEL'; return; }
+        if (k === 'e') {
+          if (G.trader) push(makeTradeModal());
+          else notice('No trader in camp right now');
+          return;
+        }
+        if (k === 'w') { push(makeWorldScreen()); tip('world'); return; }
+      }
+      if (k === 'ArrowUp') return moveCursor(0, -1);
+      if (k === 'ArrowDown') return moveCursor(0, 1);
+      if (k === 'ArrowLeft') return moveCursor(-1, 0);
+      if (k === 'ArrowRight') return moveCursor(1, 0);
+      if (k === 'Enter') {
+        if (!inMap(G.cursor.x, G.cursor.y)) { moveCursor(0, 0); return; }
+        paintCell(G.cursor.x, G.cursor.y, false);
+      }
+    },
+
+    onClick(c) {
+      if (c.cx < VIEW_W && c.cy < VIEW_H) paintCell(c.cx + G.cam.x, c.cy + G.cam.y, false);
+    },
+    onDrag(c) {
+      if (c.cx < VIEW_W && c.cy < VIEW_H) paintCell(c.cx + G.cam.x, c.cy + G.cam.y, true);
+    },
+    onHover(c) {
+      if (c && c.cx < VIEW_W && c.cy < VIEW_H) {
+        G.cursor.x = c.cx + G.cam.x;
+        G.cursor.y = c.cy + G.cam.y;
+      } else {
+        G.cursor.x = -1; G.cursor.y = -1;
+      }
+    },
+    pan(dx, dy) { panCam(dx, dy); },
+
+    draw(f) {
+      // world layer
+      if (GFX.mode === 'tiles') gfx.setWorldPainter((ctx, ff) => drawMapTiles(ctx, ff));
+      else drawWorldAscii(f);
+      // opaque panels
+      fillBg(VIEW_W, 0, GRID_W - VIEW_W, GRID_H, PANEL_BG);
+      fillBg(0, VIEW_H, VIEW_W, GRID_H - VIEW_H, PANEL_BG);
+      for (let y = 0; y < GRID_H; y++) put(VIEW_W, y, '│', '#3a3f4a', PANEL_BG);
+      for (let x = 0; x < VIEW_W; x++) put(x, VIEW_H, '─', '#3a3f4a', PANEL_BG);
+      put(VIEW_W, VIEW_H, '┤', '#3a3f4a', PANEL_BG);
+      this.drawSidebar(f);
+      this.drawLog();
+      this.drawMinimap(f);
+      if (G.mode === 'BUILD') this.drawBuildMenu();
+      drawNotice();
+      drawTip();
+    },
+
+    drawSidebar(f) {
+      const lay = sidebarLayout();
+      const civ = CIVS.find(c => c.id === G.civ);
+      let y = 0;
+      str(SB_X, y++, '☼ HEARTHFALL', '#ffd860');
+      const spd = G.paused ? ((f >> 4) % 2 ? '‖ PAUSED' : '        ') : '▶'.repeat(G.speed);
+      str(SB_X, y++, `Day ${G.day}  ${timeStr()}  ${spd}`, G.paused ? '#e0a040' : '#b8b2a0');
+      const tier = communeTier();
+      const tierStr = tier === 3 ? 'Tier III' : tier === 2 ? 'Tier II (9☺→III)' : 'Tier I (6☺→II)';
+      str(SB_X, y++, `${civ ? civ.name.replace('The ', '') : ''} · ${tierStr}`.slice(0, 26), civ ? civ.fg : '#b8b2a0');
+      str(SB_X, y++, '─'.repeat(25), '#3a3f4a');
+      const R = G.res;
+      str(SB_X, y++, `Food ${String(R.food).padEnd(4)}Meals ${R.meals}`, '#c8c2b0');
+      str(SB_X, y++, `Wood ${String(R.wood).padEnd(4)}Stone ${R.stone}`, '#a8a296');
+      str(SB_X, y++, `Scrap ${String(R.scrap).padEnd(3)}Herbs ${R.herbs}`, '#a8a296');
+      str(SB_X, y++, `Coin ${String(R.coin).padEnd(4)}Wpn ${R.weapons}  Med ${R.meds}`, '#d8c860');
+      if (G.raidActive) str(SB_X, y++, `⚠ RAIDERS: ${G.raiders.length}`, (f >> 3) % 2 ? '#ff5040' : '#a03028');
+      if (G.trader) str(SB_X, y++, '¤ trader in camp — e trade', '#ffd860');
+      if (G.craftQueue.length) str(SB_X, y++, `Ω workshop queue: ${G.craftQueue.length}`, '#c08a50');
+      // objective tracker
+      if (G.objIdx < OBJECTIVES.length) {
+        const o = OBJECTIVES[G.objIdx];
+        const flash = G.objFlash > performance.now();
+        str(SB_X, lay.objY, '─ OBJECTIVE ' + '─'.repeat(13), flash ? '#3a5a42' : '#3a3f4a');
+        const pr = o.prog ? o.prog(G) : null;
+        str(SB_X, lay.objY + 1, `► ${o.text}${pr ? ` (${pr[0]}/${pr[1]})` : ''}`.slice(0, 26), flash ? '#8ad080' : '#ffd870');
+        str(SB_X, lay.objY + 2, `  ${o.hint}`.slice(0, 26), '#8a94a2');
+      } else {
+        str(SB_X, lay.objY, '◆ all objectives complete', '#c8a0e8');
+      }
+      str(SB_X, lay.setHdrY, `─ SETTLERS (${G.settlers.length}) ` + '─'.repeat(Math.max(0, 10 - String(G.settlers.length).length)), '#3a3f4a');
+      G.settlers.slice(0, lay.shown).forEach((s, i) => {
+        const yy = lay.settlerY + i;
+        const bar = hpBar(s.hp, s.maxHp, 6);
+        let status = '';
+        if (s.away) status = '→away';
+        else if (s.sleeping) status = 'zzz';
+        else if (s.starving) status = 'HUNGRY';
+        else if (s.task) status = s.task.kind;
+        str(SB_X, yy, `☺${s.name.padEnd(7).slice(0, 7)}${ROLE_LETTER[s.role]} `, s.away ? '#6a7484' : (ROLE_COLORS[s.role] || '#d8d2c0'));
+        str(SB_X + 10, yy, '█'.repeat(bar.filled), bar.col);
+        str(SB_X + 10 + bar.filled, yy, '░'.repeat(6 - bar.filled), '#3a3f4a');
+        str(SB_X + 17, yy, status.slice(0, 8), '#8a94a2');
+      });
+      if (lay.expedY >= 0) {
+        str(SB_X, lay.expedY, '─ EXPEDITIONS ' + '─'.repeat(11), '#3a3f4a');
+        G.expeditions.forEach((e, i) => {
+          const loc = G.world.locs[e.locIdx];
+          str(SB_X, lay.expedY + 1 + i, `⚑ ${loc.name.slice(0, 13)} ${e.phase === 'out' ? '►out' : '◄home'} ${(e.t / 1440).toFixed(1)}d`, '#9ac0d8');
+        });
+      }
+      // mode hints pinned to the bottom
+      let hy = GRID_H - 6;
+      str(SB_X, hy - 1, '─'.repeat(25), '#3a3f4a');
+      const hint = (a, b) => { str(SB_X, hy++, a, '#8a94a2'); if (b) str(SB_X, hy++, b, '#8a94a2'); };
+      if (G.mode === 'BUILD') {
+        str(SB_X, hy++, 'MODE: BUILD', '#e8c860');
+        hint(G.buildSel ? `→ ${G.buildSel.name}` : 'pick a-m from menu');
+        hint('click/drag map to place', 'Esc to finish');
+      } else if (G.mode === 'CHOP') {
+        str(SB_X, hy++, 'MODE: CHOP', '#e8c860');
+        hint('drag across trees ♠', 'Esc done');
+      } else if (G.mode === 'MINE') {
+        str(SB_X, hy++, 'MODE: MINE', '#e8c860');
+        hint('drag across rocks ▲', 'Esc done');
+      } else if (G.mode === 'FORAGE') {
+        str(SB_X, hy++, 'MODE: FORAGE', '#e8c860');
+        hint('drag across bushes "', 'Esc done');
+      } else if (G.mode === 'CANCEL') {
+        str(SB_X, hy++, 'MODE: CANCEL/DEMOLISH', '#e8c860');
+        hint('click plans/structures', 'Esc done');
+      } else {
+        hint('b build t chop m mine', 'g forage x cancel w world');
+        hint('e trade v gfx n minimap', 'pan: wheel · shift+arrows');
+        hint('? help · spc pause', 'click name → role');
+      }
+    },
+
+    drawLog() {
+      str(1, LOG_Y, inspectText().slice(0, VIEW_W - 2), '#7f8b99');
+      const rows = 5;
+      const tail = G.log.slice(-rows);
+      for (let i = 0; i < tail.length; i++) {
+        const age = tail.length - 1 - i;
+        const k = age === 0 ? 1 : (age === 1 ? 0.8 : 0.55);
+        str(1, LOG_Y + 1 + (rows - tail.length) + i, tail[i].text.slice(0, VIEW_W - 2), dim(tail[i].fg, k));
+      }
+    },
+
+    drawMinimap(f) {
+      if (!MM.on) return;
+      const x0 = 1, y0 = VIEW_H - MM.h - 1;
+      const sx = MAP_W / MM.w, sy = MAP_H / MM.h;
+      for (let my = 0; my < MM.h; my++) for (let mx = 0; mx < MM.w; mx++) {
+        const t = tileAt(Math.min(MAP_W - 1, (mx * sx + sx / 2) | 0), Math.min(MAP_H - 1, (my * sy + sy / 2) | 0)).t;
+        put(x0 + mx, y0 + my, ' ', '#000', MM_COL[t] || '#243719');
+      }
+      const vx0 = Math.round(G.cam.x / sx), vx1 = Math.min(MM.w - 1, Math.round((G.cam.x + VIEW_W) / sx) - 1);
+      const vy0 = Math.round(G.cam.y / sy), vy1 = Math.min(MM.h - 1, Math.round((G.cam.y + VIEW_H) / sy) - 1);
+      for (let mx = vx0; mx <= vx1; mx++) {
+        put(x0 + mx, y0 + vy0, mx === vx0 ? '┌' : mx === vx1 ? '┐' : '─', '#e8e8d8');
+        if (vy1 !== vy0) put(x0 + mx, y0 + vy1, mx === vx0 ? '└' : mx === vx1 ? '┘' : '─', '#e8e8d8');
+      }
+      for (let my = vy0 + 1; my < vy1; my++) {
+        put(x0 + vx0, y0 + my, '│', '#e8e8d8');
+        put(x0 + vx1, y0 + my, '│', '#e8e8d8');
+      }
+      const dot = (x, y, ch, fg) => put(x0 + Math.min(MM.w - 1, (x / sx) | 0), y0 + Math.min(MM.h - 1, (y / sy) | 0), ch, fg);
+      for (const s of G.settlers) if (!s.away) dot(s.x, s.y, '·', '#e8e8d8');
+      for (const r of G.raiders) dot(r.x, r.y, '•', (f >> 3) % 2 ? '#ff5040' : '#c03028');
+      dot(G.camp.x, G.camp.y, '☼', '#ffd860');
+    },
+
+    drawBuildMenu() {
+      const x0 = 1, y0 = 1, w = 36;
+      const tier = communeTier();
+      if (G.buildSel) {
+        const cost = Object.entries(G.buildSel.cost).map(([k, v]) => v + (COST_ABBR[k] || k)).join(' ');
+        fillBg(x0, y0, w, 1, '#12141c');
+        str(x0 + 1, y0, `BUILD: ${G.buildSel.name} (${cost}) · Esc = menu`, '#e8c860', '#12141c');
+        return;
+      }
+      fillBg(x0, y0, w, BUILDS.length + 2, '#12141c');
+      str(x0 + 1, y0, 'BUILD — click map to place', '#e8c860');
+      BUILDS.forEach((b, i) => {
+        const y = y0 + 1 + i;
+        const afford = Object.entries(b.cost).every(([k, v]) => G.res[k] >= v);
+        const locked = b.tier && b.tier > tier;
+        const focus = i === scr.buildFocus;
+        if (focus) fillBg(x0, y, w, 1, '#1c2230');
+        const bg = focus ? '#1c2230' : '#12141c';
+        const cost = Object.entries(b.cost).map(([k, v]) => v + (COST_ABBR[k] || k)).join(' ');
+        const glyph = T[b.id] ? T[b.id].ch : '/';
+        const tag = locked ? ` T${b.tier}!` : (b.craft ? ' ⚒' : '');
+        const fg = afford && !locked ? (focus ? '#ffe8a0' : '#c8c2b0') : '#5a5f6a';
+        str(x0 + 1, y, `${focus ? '►' : ' '}${b.key}) ${glyph} ${b.name.padEnd(12)} ${cost}${tag}`, fg, bg);
+      });
+    },
+  };
+  return scr;
+}
+
+// ---------------------------------------------------------------- world screen
+export function makeWorldScreen() {
+  const px = 56, ox = 2, oy = 2;
+  const scr = {
+    id: 'world', modal: false, focus: 0,
+    widgets() {
+      return G.world.locs.map((l, i) => ({
+        rect: { x: px - 1, y: 3 + i, w: 42, h: 1 },
+        focusable: !l.cleared,
+        locIdx: i,
+        onActivate(w) { push(makePartyModal(w.locIdx)); },
+        onClick(w) {
+          const fw = focusedWidget(scr);
+          if (fw && fw.locIdx === w.locIdx) { push(makePartyModal(w.locIdx)); return; }
+          // focus this row (focus is an index among focusables)
+          const foc = G.world.locs.map((ll, j) => ({ ll, j })).filter(o => !o.ll.cleared);
+          const fi = foc.findIndex(o => o.j === w.locIdx);
+          if (fi >= 0) scr.focus = fi;
+        },
+        draw(w, focused, f) {
+          const lt = LOCTYPES[l.type];
+          const stars = '★'.repeat(Math.max(1, Math.min(5, Math.round(l.diff / 3))));
+          const fg = l.cleared ? '#555a60' : (focused ? '#ffe8a0' : '#b8b2a0');
+          if (focused) fillBg(w.rect.x, w.rect.y, w.rect.w, 1, '#22283a');
+          str(px, w.rect.y, `${focused ? '►' : ' '}${lt.ch} ${l.name.padEnd(15)} ${l.cleared ? '✓done' : stars}`, fg, focused ? '#22283a' : undefined);
+        },
+      }));
+    },
+    keymap: {
+      Escape: () => pop(),
+      w: () => pop(),
+      ' ': () => { G.paused = !G.paused; },
+    },
+    draw(f) {
+      const w = G.world;
+      str(2, 0, '☼ WORLD MAP — ↑↓ select · Enter send party · Esc back', '#ffd860');
+      const TERR = { '.': '#3a4434', '♠': '#2e6b2a', '^': '#8d8d85', '≈': '#3a6fb0' };
+      for (let y = 0; y < WORLD_H; y++) for (let x = 0; x < WORLD_W; x++) {
+        const ch = w.grid[y][x];
+        put(ox + x, oy + y, ch, TERR[ch] || '#3a4434', '#0b0d0f');
+      }
+      const sel = focusedWidget(this);
+      w.locs.forEach((l, i) => {
+        const lt = LOCTYPES[l.type];
+        const isSel = sel && sel.locIdx === i;
+        const bg = isSel && (f >> 4) % 2 ? '#3a4560' : '#0b0d0f';
+        if (l.cleared) put(ox + l.x, oy + l.y, '×', '#555a60', bg);
+        else put(ox + l.x, oy + l.y, lt.ch, lt.fg, bg);
+      });
+      put(ox + w.base.x, oy + w.base.y, '☼', '#ffd860', '#0b0d0f');
+      for (const e of G.expeditions) {
+        const loc = w.locs[e.locIdx];
+        const frac = e.phase === 'out' ? 1 - e.t / e.total : e.t / e.total;
+        put(ox + Math.round(w.base.x + (loc.x - w.base.x) * frac), oy + Math.round(w.base.y + (loc.y - w.base.y) * frac), '☺', '#7ad0e8');
+      }
+      str(px, 2, 'KNOWN LOCATIONS', '#c8c2b0');
+      drawWidgets(this, f);
+      let dy = 4 + w.locs.length;
+      const selLoc = sel ? w.locs[sel.locIdx] : null;
+      if (selLoc) {
+        const lt = LOCTYPES[selLoc.type];
+        str(px, dy++, `${lt.name}: "${selLoc.name}"`, lt.fg);
+        str(px, dy++, lt.desc.slice(0, 42), '#8a94a2');
+        str(px, dy++, `Danger ~${selLoc.diff}   Travel ${(selLoc.travel / 1440).toFixed(1)}d each way`, '#a8a296');
+        str(px, dy++, `${G.settlers.filter(s => !s.away).length} settlers available at home`, '#8a94a2');
+      }
+      dy++;
+      for (const e of G.expeditions) {
+        const loc = w.locs[e.locIdx];
+        str(px, dy++, `⚑ ${loc.name}: ${e.phase === 'out' ? 'traveling out' : 'heading home'} ${(e.t / 1440).toFixed(1)}d`, '#9ac0d8');
+      }
+      const tail = G.log.slice(-4);
+      for (let i = 0; i < tail.length; i++) str(2, GRID_H - 5 + i, tail[i].text.slice(0, GRID_W - 4), dim(tail[i].fg, i === tail.length - 1 ? 1 : 0.6));
+      drawTip();
+    },
+  };
+  return scr;
+}
+
+function makePartyModal(locIdx) {
+  const sel = new Set();
+  const avail = () => G.settlers.filter(s => !s.away);
+  const bw = 46;
+  const x0 = ((GRID_W - bw) / 2) | 0;
+  const scr = {
+    id: 'party', modal: true, focus: avail().length, // focus starts on LAUNCH
+    widgets() {
+      const a = avail();
+      const bh = a.length + 6;
+      const y0 = ((GRID_H - bh) / 2) | 0;
+      const ws = a.map((s, i) => ({
+        rect: { x: x0, y: y0 + 2 + i, w: bw, h: 1 },
+        focusable: true,
+        onActivate: () => { sel.has(s.id) ? sel.delete(s.id) : sel.add(s.id); },
+        draw(w, focused) {
+          const on = sel.has(s.id);
+          const bg = focused ? '#22304a' : '#141824';
+          if (focused) fillBg(x0, w.rect.y, bw, 1, bg);
+          str(x0 + 1, w.rect.y, `${focused ? '►' : ' '}${i + 1} [${on ? 'x' : ' '}] ${s.name.padEnd(8)} ${s.role.padEnd(6)} hp${String(Math.ceil(s.hp)).padEnd(3)}`, on ? '#ffe8a0' : '#b8b2a0', bg);
+        },
+      }));
+      ws.push({
+        rect: { x: x0, y: y0 + bh - 2, w: bw, h: 1 },
+        focusable: true,
+        onActivate: () => {
+          const ids = [...sel];
+          if (!ids.length) { notice('Pick at least one settler'); return; }
+          if (startExpedition(locIdx, ids)) pop();
+        },
+        draw(w, focused) {
+          const bg = focused ? '#22304a' : '#141824';
+          if (focused) fillBg(x0, w.rect.y, bw, 1, bg);
+          str(x0 + 1, w.rect.y, `${focused ? '►' : ' '}[Enter] LAUNCH    [Esc] cancel`, '#8ad080', bg);
+        },
+      });
+      return ws;
+    },
+    keymap: { Escape: () => pop() },
+    onKey(k) {
+      if (/^[1-9]$/.test(k)) {
+        const s = avail()[+k - 1];
+        if (s) { sel.has(s.id) ? sel.delete(s.id) : sel.add(s.id); }
+      }
+    },
+    draw(f) {
+      const loc = G.world.locs[locIdx];
+      const a = avail();
+      const bh = a.length + 6;
+      const y0 = ((GRID_H - bh) / 2) | 0;
+      fillBg(x0, y0, bw, bh, '#141824');
+      str(x0 + 1, y0, `SEND PARTY → ${loc.name}`, '#ffd860', '#141824');
+      str(x0 + 1, y0 + 1, 'press 1-9 (or click) to toggle members', '#8a94a2', '#141824');
+      drawWidgets(this, f);
+      const members = a.filter(s => sel.has(s.id));
+      const pw = Math.round(partyPower(members));
+      const risk = members.length ? riskLabel(pw, loc.diff) : { label: '—', fg: '#8a94a2' };
+      str(x0 + 1, y0 + bh - 3, `Party power ~${pw} vs danger ~${Math.round(loc.diff * 2.6)}  Risk: ${risk.label}`, risk.fg, '#141824');
+    },
+  };
+  return scr;
+}
+
+// ---------------------------------------------------------------- modals
+function makeTradeModal() {
+  const x0 = 4, y0 = 4, w = 40;
+  const scr = {
+    id: 'trade', modal: true, focus: 0,
+    update() { if (!G.trader) pop(); }, // trader left / raid scared them off
+    widgets: TRADE.map((_, i) => ({
+      rect: { x: x0, y: y0 + 2 + i, w, h: 1 },
+      focusable: true,
+      onActivate: () => doTrade(i),
+      draw(wd, focused) {
+        const { give, get } = adjustedOffer(i);
+        const fmt = (o) => Object.entries(o).map(([k, v]) => `${v} ${k}`).join(', ');
+        const afford = Object.entries(give).every(([k, v]) => G.res[k] >= v);
+        const bg = focused ? '#22304a' : '#141a24';
+        if (focused) fillBg(x0, wd.rect.y, w, 1, bg);
+        str(x0 + 1, wd.rect.y, `${focused ? '►' : ' '}${i + 1}) ${fmt(give).padEnd(12)} → ${fmt(get)}`, afford ? (focused ? '#ffe8a0' : '#c8c2b0') : '#5a5f6a', bg);
+      },
+    })),
+    keymap: { Escape: () => pop(), e: () => pop() },
+    onKey(k) {
+      const i = +k - 1;
+      if (i >= 0 && i < TRADE.length) doTrade(i);
+    },
+    draw(f) {
+      fillBg(x0, y0, w, TRADE.length + 4, '#141a24');
+      str(x0 + 1, y0, '¤ TRADER — press 1-7 to deal', '#ffd860', '#141a24');
+      str(x0 + 1, y0 + 1, `your coin: ${G.res.coin}`, '#d8c860', '#141a24');
+      drawWidgets(this, f);
+      str(x0 + 1, y0 + TRADE.length + 2, hasPerk('friends') ? 'Trader Friends: prices improved' : 'Esc to close', '#8a94a2', '#141a24');
+      drawNotice();
+    },
+  };
+  return scr;
+}
+
+function makeIntroModal() {
+  const close = () => { pop(); tip('welcome'); };
+  return {
+    id: 'intro', modal: true, pausesSim: true, listNav: false,
+    keymap: { Enter: close, Escape: close, ' ': close },
+    onClick: close,
+    draw(f) {
+      const civ = CIVS.find(c => c.id === G.civ);
+      const bw = 60, bh = INTRO.length + 9;
+      const x0 = ((GRID_W - bw) / 2) | 0, y0 = ((GRID_H - bh) / 2) | 0;
+      fillBg(x0, y0, bw, bh, '#12151e');
+      const title = `— ${civ ? civ.name : 'The Commune'} —`;
+      str(x0 + (((bw - title.length) / 2) | 0), y0 + 1, title, civ ? civ.fg : '#ffd860', '#12151e');
+      INTRO.forEach((l, i) => str(x0 + 4, y0 + 3 + i, l, '#c8c2b0', '#12151e'));
+      str(x0 + 4, y0 + bh - 4, 'Your first steps wait in the OBJECTIVE box, top right.', '#ffd870', '#12151e');
+      const go = '[Enter] light the fire';
+      str(x0 + (((bw - go.length) / 2) | 0), y0 + bh - 2, go, (f >> 4) % 2 ? '#8ad080' : '#5a8a60', '#12151e');
+    },
+  };
+}
+
+function makeHelpModal() {
+  const close = () => pop();
+  const lines = [
+    ['HEARTHFALL — how to run a commune', '#ffd860'],
+    ['', ''],
+    ['Keep everyone fed, build defenses, survive the raids, and send', '#b8b2a0'],
+    ['parties into the world. When the commune falls, its story becomes', '#b8b2a0'],
+    ['legacy — spend it on permanent perks for the next run.', '#b8b2a0'],
+    ['', ''],
+    ['b       build menu · walls, farms, beds, traps, workshop, kitchen', '#c8c2b0'],
+    ['t/m/g   chop trees ♠ / mine rocks ▲ / forage herb bushes "', '#c8c2b0'],
+    ['x       cancel plans or demolish structures', '#c8c2b0'],
+    ['w       world map — send quest parties out', '#c8c2b0'],
+    ['e       trade with the visiting caravan (every few days)', '#c8c2b0'],
+    ['space   pause · 1/2/3 game speed · Esc close menus', '#c8c2b0'],
+    ['v       toggle graphics: pixel tiles / classic ASCII', '#c8c2b0'],
+    ['pan     trackpad/wheel · shift+arrows · middle-drag ·', '#c8c2b0'],
+    ['        click the minimap (n toggles it)', '#c8c2b0'],
+    ['Q       save & quit to the main menu (progress kept)', '#c8c2b0'],
+    ['click a settler name in the sidebar to change role', '#c8c2b0'],
+    ['', ''],
+    ['Controller: stick/d-pad cursor · A act · B back · X build', '#8a94a2'],
+    ['Y world · LB/RB cycle tool · LT/RT speed · Start pause', '#8a94a2'],
+    ['', ''],
+    ['Economy: crops → kitchen meals (more filling) · herbs → medkits', '#8a94a2'],
+    ['at the workshop · scrap + wood → spears · coin buys anything.', '#8a94a2'],
+    ['Growth: 6 settlers unlock tier II (workshop, kitchen, watch post),', '#8a94a2'],
+    ['9 unlock tier III (stone walls). Guards near a watch post shoot', '#8a94a2'],
+    ['arrows at raiders. Clearing bandit camps delays the next raid.', '#8a94a2'],
+    ['', ''],
+    ['press ? or Esc to close', '#e8c860'],
+  ];
+  return {
+    id: 'help', modal: true, pausesSim: true,
+    keymap: { Escape: close, '?': close, Enter: close },
+    onClick: close,
+    draw() {
+      const bw = 70, bh = lines.length + 2;
+      const x0 = ((GRID_W - bw) / 2) | 0, y0 = ((GRID_H - bh) / 2) | 0;
+      fillBg(x0, y0, bw, bh, '#12151e');
+      lines.forEach((l, i) => str(x0 + 2, y0 + 1 + i, l[0], l[1] || '#b8b2a0', '#12151e'));
+    },
+  };
+}
+
+export function makeGameOverModal() {
+  const toCiv = () => replaceAll(makeMenuScreen(), makeCivScreen());
+  const toMenu = () => replaceAll(makeMenuScreen());
+  return {
+    id: 'gameover', modal: true, pausesSim: true,
+    keymap: { r: toCiv, R: toCiv, Enter: toCiv, m: toMenu, M: toMenu, Escape: toMenu },
+    draw() {
+      const bw = 48, bh = 11;
+      const x0 = ((GRID_W - bw) / 2) | 0, y0 = ((GRID_H - bh) / 2) | 0;
+      fillBg(x0, y0, bw, bh, '#1a0e0e');
+      str(x0 + 2, y0 + 1, 'THE COMMUNE HAS FALLEN', '#ff5040', '#1a0e0e');
+      str(x0 + 2, y0 + 3, `You survived ${G.day} day${G.day === 1 ? '' : 's'}.`, '#c8c2b0', '#1a0e0e');
+      const st = G.stats;
+      str(x0 + 2, y0 + 4, `${st.raids} raids repelled · ${st.sites} sites cleared · ${st.kills} kills`, '#8a94a2', '#1a0e0e');
+      str(x0 + 2, y0 + 6, `◆${G.legacyEarned} legacy earned (total ◆${META.points})`, '#c8a0e8', '#1a0e0e');
+      str(x0 + 2, y0 + 8, '[R] rise again    [M] main menu', '#e8c860', '#1a0e0e');
+    },
+  };
+}

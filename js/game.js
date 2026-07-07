@@ -7,19 +7,18 @@ import { hasPerk, endRun, addPoints } from './meta.js';
 
 function makeState() {
   return {
-    screen: 'MENU', civ: null,
+    civ: null,
     mods: { crop: 1, build: 1, guardDmg: 0, wallHp: 1, expPower: 1, travel: 1, deal: 0 },
     stats: { raids: 0, sites: 0, kills: 0, peak: 0, chopped: 0, farmsBuilt: 0, bedsBuilt: 0, wallsBuilt: 0, mealsCooked: 0, expeditions: 0 },
-    objIdx: 0, objFlash: 0, intro: false, tip: null,
-    day: 1, min: 380, speed: 1, paused: false, gameOver: false, help: false, legacyEarned: 0,
+    objIdx: 0, objFlash: 0, tip: null,
+    day: 1, min: 380, speed: 1, paused: false, gameOver: false, legacyEarned: 0,
     tiles: null, camp: { x: 0, y: 0 },
     res: { food: 25, meals: 0, wood: 40, stone: 12, scrap: 2, herbs: 0, coin: 4, weapons: 1, meds: 1 },
     settlers: [], raiders: [], log: [], notice: null,
     mode: 'NORMAL', buildSel: null, cursor: { x: -1, y: -1 }, cam: { x: 0, y: 0 },
     raidNext: 3, raidActive: false, raidTimer: 0, banditsCleared: 0,
-    world: null, expeditions: [], selLoc: 0, party: new Set(), partyOpen: false,
+    world: null, expeditions: [],
     craftQueue: [], trader: null,
-    menuSel: 0, civSel: 0, perkSel: 0, tradeSel: 0, buildFocus: 0, partySel: 0,
     nextId: 1, usedNames: new Set(),
   };
 }
@@ -72,13 +71,6 @@ export function tip(id) {
   G.tip = { text: TIPS[id], until: performance.now() + 12000 };
 }
 
-export function dismissIntro() {
-  if (!G.intro) return;
-  G.intro = false;
-  G.paused = false;
-  tip('welcome');
-}
-
 // Advance the objective chain; award and log each completion.
 export function checkObjectives() {
   let guard = 0;
@@ -104,12 +96,12 @@ export function clearSave() {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
 }
 export function save() {
-  if (G.screen !== 'GAME' || G.gameOver) return;
+  if (!G.tiles || G.gameOver) return;
   const data = {
     ...G,
-    party: [...G.party], usedNames: [...G.usedNames],
-    buildSel: null, notice: null, help: false, partyOpen: false,
-    mode: 'NORMAL', cursor: { x: -1, y: -1 }, tip: null,
+    usedNames: [...G.usedNames],
+    buildSel: null, notice: null, tip: null,
+    mode: 'NORMAL', cursor: { x: -1, y: -1 },
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* ignore */ }
 }
@@ -118,12 +110,12 @@ export function loadGame() {
     const d = JSON.parse(localStorage.getItem(SAVE_KEY));
     if (!d || !d.tiles) return false;
     if (d.tiles.length !== MAP_W * MAP_H) return false; // save from an older world size
-    d.party = new Set(d.party || []);
+    delete d.party; delete d.partyOpen; delete d.screen; delete d.help; delete d.intro;
+    delete d.menuSel; delete d.civSel; delete d.perkSel; delete d.tradeSel; delete d.buildFocus; delete d.partySel; delete d.selLoc;
     d.usedNames = new Set(d.usedNames || []);
     d.buildSel = null; d.notice = null; d.tip = null;
     d.stats = { ...makeState().stats, ...(d.stats || {}) }; // older saves lack new counters
     Object.assign(G, makeState(), d);
-    G.screen = 'GAME';
     return true;
   } catch (e) { return false; }
 }
@@ -303,7 +295,7 @@ function findJob(s) {
     else if (tl.t === 'workshop' && G.craftQueue.length) { kind = 'craft'; work = 12; p = pri.craft; }
     if (kind === null) continue;
     const key = p * 10000 + mdist(s.x, s.y, x, y);
-    if (key < bestKey) { bestKey = key; best = { kind, x, y, work, onTile }; }
+    if (key < bestKey) { bestKey = key; best = { kind, x, y, work, onTile, item: null }; }
   }
   if (best) {
     tileAt(best.x, best.y).claim = s.id;
@@ -658,7 +650,7 @@ function dawnEvents() {
 
 // ---------------------------------------------------------------- tick
 export function tickGame() {
-  if (G.gameOver || G.screen !== 'GAME') return null;
+  if (G.gameOver || !G.tiles) return null;
   G.min++;
   let dawn = false;
   if (G.min >= 1440) { G.min = 0; G.day++; }
@@ -791,9 +783,6 @@ export function newGame(civId) {
   });
   updatePeak();
 
-  G.screen = 'GAME';
-  G.intro = true;   // story splash; dismissing it unpauses and shows the welcome tip
-  G.paused = true;
   addLog(`${civ.name} gather around the fire.`, '#e8d8a0');
   addLog('Grow food and build walls — raiders roam these lands.', '#b8b2a0');
   addLog('Keys: b build · t chop · m mine · g forage · w world · ? help', '#7a8a9a');

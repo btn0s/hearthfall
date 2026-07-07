@@ -218,7 +218,7 @@ function tri(g, x1, y1, x2, y2, x3, y3) {
   g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x3, y3); g.closePath(); g.fill();
 }
 
-function person({ shirt, shirtDark, hood, pack, weapon, lying, skin = '#e8c09a', hair = '#3a2a1a' }) {
+function person({ shirt, shirtDark, hood = null, pack = false, weapon = false, lying = false, skin = '#e8c09a', hair = '#3a2a1a' }) {
   return mk(g => {
     if (lying) { g.translate(5.5, 9.5); g.rotate(Math.PI / 2); g.translate(-5.5, -9.5); }
     // shadow
@@ -307,6 +307,10 @@ export function drawMapTiles(ctx, f) {
   if (!A) A = buildAtlas();
   ctx.save();
   ctx.imageSmoothingEnabled = false;
+  // everything (especially the additive night glow) stays inside the map region
+  ctx.beginPath();
+  ctx.rect(0, 0, VIEW_W * CW, VIEW_H * CH);
+  ctx.clip();
   const cam = G.cam;
   const onScreen = (x, y) => x >= cam.x && y >= cam.y && x < cam.x + VIEW_W && y < cam.y + VIEW_H;
 
