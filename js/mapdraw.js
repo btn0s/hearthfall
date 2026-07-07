@@ -1,6 +1,6 @@
 // World-layer drawing strategies for the game screen: the classic ASCII
 // cell renderer (sprite mode lives in tiles.js) plus shared map UI helpers.
-import { G, tileAt, inMap, isNight, isWinter, buildDef, traitName, insideHouse } from './game.js';
+import { G, tileAt, inMap, isNight, isWinter, buildDef, traitName, insideHouse, selBounds } from './game.js';
 import { MAP_W, MAP_H, VIEW_W, VIEW_H, T, ROLE_COLORS, RAIDER_TYPES, HOUSES } from './data.js';
 import { put, dim, setCellBg } from './gfx.js';
 
@@ -58,6 +58,14 @@ export function drawWorldAscii(f) {
     if (s.downed) fg = (f >> 3) % 2 ? '#c05050' : '#7a3a3a';
     if (s.starving && (f >> 3) % 2) fg = '#e05040';
     put(s.x - cam.x, s.y - cam.y, '☺', dim(fg, s.sleeping ? 1 : ef));
+  }
+  const b = selBounds();
+  if (b) {
+    for (let y = Math.max(b.y0, cam.y); y <= Math.min(b.y1, cam.y + VIEW_H - 1); y++) {
+      for (let x = Math.max(b.x0, cam.x); x <= Math.min(b.x1, cam.x + VIEW_W - 1); x++) {
+        setCellBg(x - cam.x, y - cam.y, '#243352');
+      }
+    }
   }
   const c = G.cursor;
   if (inMap(c.x, c.y) && onScreen(c.x, c.y)) {

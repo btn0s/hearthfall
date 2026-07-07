@@ -2,7 +2,7 @@
 //   { id, modal, pausesSim, listNav, focus,
 //     widgets: [] | () => [],        // {rect, draw(w,focused,f), onClick(w,c), onActivate(w), focusable, disabled()}
 //     keymap: {key: fn(mods)},       // checked after focus navigation
-//     onKey(k, mods), onClick(c), onDrag(c), onHover(c|null), pan(dx, dy),
+//     onKey(k, mods), onClick(c), onDrag(c), onRelease(), onHover(c|null), pan(dx, dy),
 //     draw(f), onEnter(), onExit() }
 // Input goes to the top of the stack only. Rendering walks from the topmost
 // non-modal screen upward, so modals draw over their parent.
@@ -137,8 +137,18 @@ export function setupInput(canvas) {
     if (dragging && s.onDrag) s.onDrag(c);
   });
 
-  window.addEventListener('mouseup', () => { dragging = false; panDrag = null; });
+  window.addEventListener('mouseup', () => {
+    if (dragging) {
+      const s = top();
+      if (s && s.onRelease) s.onRelease();
+    }
+    dragging = false; panDrag = null;
+  });
   canvas.addEventListener('mouseleave', () => {
+    if (dragging) {
+      const s = top();
+      if (s && s.onRelease) s.onRelease();
+    }
     dragging = false; panDrag = null;
     const s = top();
     if (s && s.onHover) s.onHover(null);

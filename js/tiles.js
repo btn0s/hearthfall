@@ -1,6 +1,6 @@
 // Tile-graphics mode: procedurally drawn pixel-art sprites, no external assets.
 // Sprites are pre-rendered onto small offscreen canvases and blitted per cell.
-import { G, tileAt, inMap, isNight, isWinter, insideHouse } from './game.js';
+import { G, tileAt, inMap, isNight, isWinter, insideHouse, selBounds } from './game.js';
 import { VIEW_W, VIEW_H, CELL_W as CW, CELL_H as CH } from './data.js';
 
 // ---------------------------------------------------------------- atlas
@@ -483,6 +483,21 @@ export function drawMapTiles(ctx, f) {
     ctx.globalCompositeOperation = 'source-over';
   }
 
+  // selection marquee
+  const sb = selBounds();
+  if (sb) {
+    const rx = (Math.max(sb.x0, cam.x) - cam.x) * CW;
+    const ry = (Math.max(sb.y0, cam.y) - cam.y) * CH;
+    const rw = (Math.min(sb.x1, cam.x + VIEW_W - 1) - Math.max(sb.x0, cam.x) + 1) * CW;
+    const rh = (Math.min(sb.y1, cam.y + VIEW_H - 1) - Math.max(sb.y0, cam.y) + 1) * CH;
+    if (rw > 0 && rh > 0) {
+      ctx.fillStyle = 'rgba(120,160,255,0.14)';
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeStyle = 'rgba(170,200,255,0.85)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(rx + 0.5, ry + 0.5, rw - 1, rh - 1);
+    }
+  }
   // cursor
   const c = G.cursor;
   if (inMap(c.x, c.y) && onScreen(c.x, c.y)) {

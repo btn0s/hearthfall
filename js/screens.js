@@ -3,8 +3,9 @@
 // clicking, focus, and drawing always agree.
 import {
   G, tileAt, inMap, timeStr, communeTier, hasSave, loadGame, newGame, save,
-  adjustedOffer, doTrade, tryPlaceBuild, designate, cancelAt, queueCraft, unqueueCraft, cycleRole,
+  adjustedOffer, doTrade, tryPlaceBuild, cancelAt, queueCraft, unqueueCraft, cycleRole,
   notice, tip, centerCam, season, isWinter, daysToWinter, moraleLabel, traitName, housingCap,
+  selBounds, selectionInfo, assignArea, clearAreaPlans,
 } from './game.js';
 import {
   MAP_W, MAP_H, VIEW_W, VIEW_H, T, BUILDS, BUILD_TABS, CRAFTS, COST_ABBR, ROLE_COLORS, ROLE_LETTER,
@@ -203,7 +204,7 @@ export function makeLegacyScreen() {
 }
 
 // ---------------------------------------------------------------- game screen
-const TOOL_MODES = ['NORMAL', 'BUILD', 'CHOP', 'MINE', 'FORAGE', 'CANCEL'];
+const TOOL_MODES = ['NORMAL', 'BUILD', 'CANCEL'];
 
 // single source of truth for sidebar row positions (draw + hit share this)
 function sidebarLayout() {
@@ -216,10 +217,20 @@ function sidebarLayout() {
   y += (G.objIdx < OBJECTIVES.length) ? 3 : 1;
   const setHdrY = y;
   const settlerY = y + 1;
-  const shown = Math.min(G.settlers.length, 12);
-  y = settlerY + shown;
-  const expedY = G.expeditions.length ? y : -1;
-  return { objY, setHdrY, settlerY, shown, expedY };
+  let shown = Math.min(G.settlers.length, 12);
+  const expedRows = G.expeditions.length ? 1 + G.expeditions.length : 0;
+  // minimap fills the slack below, shrinking to fit; a crowded settler list
+  // gives up rows (down to 6) before the map is squeezed out entirely
+  let mmY = settlerY + shown + expedRows + 1; // header row; map starts mmY+1
+  let mmH = Math.min(13, 37 - (mmY + 1));     // rows of map, floor above the hint block
+  if (MM.on && mmH < 7) {
+    const give = Math.min(7 - mmH, Math.max(0, shown - 6));
+    shown -= give; mmY -= give; mmH += give;
+  }
+  const y2 = settlerY + shown;
+  const expedY = G.expeditions.length ? y2 : -1;
+  const mmOn = MM.on && mmH >= 7;
+  return { objY, setHdrY, settlerY, shown, expedY, mmY, mmH, mmOn, mmW: 25 };
 }
 
 function hpBar(hp, max, w) {
@@ -236,6 +247,7 @@ function moveCursor(dx, dy) {
   }
   G.cursor.x = Math.max(0, Math.min(MAP_W - 1, G.cursor.x + dx));
   G.cursor.y = Math.max(0, Math.min(MAP_H - 1, G.cursor.y + dy));
+  if (G.sel && G.sel.kb) { G.sel.bx = G.cursor.x; G.sel.by = G.cursor.y; } // grow the box
   const m = 3;
   if (G.cursor.x < G.cam.x + m) panCam(G.cursor.x - (G.cam.x + m), 0);
   if (G.cursor.x > G.cam.x + VIEW_W - 1 - m) panCam(G.cursor.x - (G.cam.x + VIEW_W - 1 - m), 0);
@@ -246,16 +258,36 @@ function moveCursor(dx, dy) {
 function paintCell(x, y, isDrag) {
   if (!inMap(x, y)) return;
   if (G.mode === 'BUILD' && G.buildSel) tryPlaceBuild(x, y);
-  else if (G.mode === 'CHOP') designate(x, y, 'chop');
-  else if (G.mode === 'MINE') designate(x, y, 'mine');
-  else if (G.mode === 'FORAGE') designate(x, y, 'forage');
   else if (G.mode === 'CANCEL') { if (!isDrag) cancelAt(x, y); }
-  else if (G.mode === 'NORMAL' && !isDrag) {
-    if (G.trader && G.trader.x === x && G.trader.y === y) { push(makeTradeModal()); return; }
-    if (tileAt(x, y).t === 'workshop') { push(makeWorkshopModal()); return; }
-    const s = G.settlers.find(s => !s.away && s.x === x && s.y === y);
-    if (s) cycleRole(s);
+}
+
+// A plain click on something interactive acts immediately; everything else
+// goes through the selection box → orders menu.
+function clickInteract(x, y) {
+  if (G.trader && G.trader.x === x && G.trader.y === y) { push(makeTradeModal()); return true; }
+  if (tileAt(x, y).t === 'workshop') { push(makeWorkshopModal()); return true; }
+  const s = G.settlers.find(s => !s.away && s.x === x && s.y === y);
+  if (s) { cycleRole(s); return true; }
+  return false;
+}
+
+// Selection finished (mouse-up or Enter): open the orders menu if there is
+// anything in the box worth ordering.
+function resolveSelection() {
+  const b = selBounds();
+  if (!b) return;
+  const info = selectionInfo(b);
+  if (info.tiles === 1) {
+    G.sel = null;
+    clickInteract(b.x0, b.y0);
+    return;
   }
+  if (info.trees + info.rocks + info.bushes + info.water + info.marks === 0) {
+    G.sel = null;
+    notice('Nothing to assign there');
+    return;
+  }
+  push(makeOrdersMenu(b, info));
 }
 
 function selectBuild(scr, def) {
@@ -277,11 +309,11 @@ export function makeGameScreen() {
           onClick: () => { const cur = G.settlers.find(x => x.id === s.id); if (cur) cycleRole(cur); },
         });
       });
-      if (MM.on) {
+      if (lay.mmOn) {
         ws.push({
-          rect: { x: 1, y: VIEW_H - MM.h - 1, w: MM.w, h: MM.h },
+          rect: { x: SB_X, y: lay.mmY + 1, w: lay.mmW, h: lay.mmH },
           onClick: (w, c) => {
-            centerCam((c.cx - w.rect.x + 0.5) * (MAP_W / MM.w), (c.cy - w.rect.y + 0.5) * (MAP_H / MM.h));
+            centerCam((c.cx - w.rect.x + 0.5) * (MAP_W / lay.mmW), (c.cy - w.rect.y + 0.5) * (MAP_H / lay.mmH));
           },
         });
       }
@@ -302,6 +334,7 @@ export function makeGameScreen() {
 
     onKey(k, mods = {}) {
       if (k === 'Escape' && G.tip) { G.tip = null; return; }
+      if (k === 'Escape' && G.sel) { G.sel = null; return; }
       const P = 4;
       if (k === 'PAN_LEFT' || (mods.shift && k === 'ArrowLeft')) return panCam(-P, 0);
       if (k === 'PAN_RIGHT' || (mods.shift && k === 'ArrowRight')) return panCam(P, 0);
@@ -342,9 +375,6 @@ export function makeGameScreen() {
       if (k === 'n') { toggleMinimap(); return; }
       if (G.mode !== 'BUILD') {
         if (k === 'b') { G.mode = 'BUILD'; G.buildSel = null; return; }
-        if (k === 't') { G.mode = 'CHOP'; return; }
-        if (k === 'm') { G.mode = 'MINE'; return; }
-        if (k === 'g') { G.mode = 'FORAGE'; return; }
         if (k === 'x') { G.mode = 'CANCEL'; return; }
         if (k === 'e') {
           if (G.trader) push(makeTradeModal());
@@ -359,15 +389,29 @@ export function makeGameScreen() {
       if (k === 'ArrowRight') return moveCursor(1, 0);
       if (k === 'Enter') {
         if (!inMap(G.cursor.x, G.cursor.y)) { moveCursor(0, 0); return; }
-        paintCell(G.cursor.x, G.cursor.y, false);
+        const cx = G.cursor.x, cy = G.cursor.y;
+        if (G.mode !== 'NORMAL') { paintCell(cx, cy, false); return; }
+        if (G.sel) { resolveSelection(); return; }              // second press: confirm the box
+        if (clickInteract(cx, cy)) return;                       // settler / trader / workshop
+        G.sel = { ax: cx, ay: cy, bx: cx, by: cy, kb: true };    // first press: anchor a box
+        notice('Selecting — arrows stretch, Enter assigns, Esc cancels');
       }
     },
 
     onClick(c) {
-      if (c.cx < VIEW_W && c.cy < VIEW_H) paintCell(c.cx + G.cam.x, c.cy + G.cam.y, false);
+      if (c.cx >= VIEW_W || c.cy >= VIEW_H) return;
+      const x = c.cx + G.cam.x, y = c.cy + G.cam.y;
+      if (G.mode === 'NORMAL') { G.sel = { ax: x, ay: y, bx: x, by: y }; return; }
+      paintCell(x, y, false);
     },
     onDrag(c) {
-      if (c.cx < VIEW_W && c.cy < VIEW_H) paintCell(c.cx + G.cam.x, c.cy + G.cam.y, true);
+      if (c.cx >= VIEW_W || c.cy >= VIEW_H) return;
+      const x = Math.min(MAP_W - 1, Math.max(0, c.cx + G.cam.x)), y = Math.min(MAP_H - 1, Math.max(0, c.cy + G.cam.y));
+      if (G.mode === 'NORMAL') { if (G.sel && !G.sel.kb) { G.sel.bx = x; G.sel.by = y; } return; }
+      paintCell(x, y, true);
+    },
+    onRelease() {
+      if (G.mode === 'NORMAL' && G.sel && !G.sel.kb) resolveSelection();
     },
     onHover(c) {
       if (c && c.cx < VIEW_W && c.cy < VIEW_H) {
@@ -472,21 +516,15 @@ export function makeGameScreen() {
         str(SB_X, hy++, 'MODE: BUILD', '#e8c860');
         hint(G.buildSel ? `→ ${G.buildSel.name}` : '←→ tabs · a-e picks');
         hint('click/drag map to place', 'Esc to finish');
-      } else if (G.mode === 'CHOP') {
-        str(SB_X, hy++, 'MODE: CHOP', '#e8c860');
-        hint('drag across trees ♠', 'Esc done');
-      } else if (G.mode === 'MINE') {
-        str(SB_X, hy++, 'MODE: MINE', '#e8c860');
-        hint('drag across rocks ▲', 'Esc done');
-      } else if (G.mode === 'FORAGE') {
-        str(SB_X, hy++, 'MODE: FORAGE/FISH', '#e8c860');
-        hint('drag bushes " · water ≈', 'Esc done');
       } else if (G.mode === 'CANCEL') {
-        str(SB_X, hy++, 'MODE: CANCEL/DEMOLISH', '#e8c860');
+        str(SB_X, hy++, 'MODE: DEMOLISH', '#e8c860');
         hint('click plans/structures', 'Esc done');
+      } else if (G.sel) {
+        str(SB_X, hy++, 'SELECTING', '#e8c860');
+        hint('stretch the box, then', 'release/Enter → orders');
       } else {
-        hint('b build t chop m mine', 'g forage x cancel w world');
-        hint('e trade v gfx n minimap', 'pan: wheel · shift+arrows');
+        hint('drag a box → orders', 'b build x demolish');
+        hint('w world e trade v gfx', 'pan: wheel · shift+arrows');
         hint('? help · spc pause', 'click name → role');
       }
     },
@@ -503,15 +541,18 @@ export function makeGameScreen() {
     },
 
     drawMinimap(f) {
-      if (!MM.on) return;
-      const x0 = 1, y0 = VIEW_H - MM.h - 1;
-      const sx = MAP_W / MM.w, sy = MAP_H / MM.h;
-      for (let my = 0; my < MM.h; my++) for (let mx = 0; mx < MM.w; mx++) {
+      const lay = sidebarLayout();
+      if (!lay.mmOn) return;
+      const x0 = SB_X, y0 = lay.mmY + 1;
+      const mmW = lay.mmW, mmH = lay.mmH;
+      str(SB_X, lay.mmY, '─ MAP (n) ' + '─'.repeat(15), '#3a3f4a');
+      const sx = MAP_W / mmW, sy = MAP_H / mmH;
+      for (let my = 0; my < mmH; my++) for (let mx = 0; mx < mmW; mx++) {
         const t = tileAt(Math.min(MAP_W - 1, (mx * sx + sx / 2) | 0), Math.min(MAP_H - 1, (my * sy + sy / 2) | 0)).t;
         put(x0 + mx, y0 + my, ' ', '#000', MM_COL[t] || '#243719');
       }
-      const vx0 = Math.round(G.cam.x / sx), vx1 = Math.min(MM.w - 1, Math.round((G.cam.x + VIEW_W) / sx) - 1);
-      const vy0 = Math.round(G.cam.y / sy), vy1 = Math.min(MM.h - 1, Math.round((G.cam.y + VIEW_H) / sy) - 1);
+      const vx0 = Math.round(G.cam.x / sx), vx1 = Math.min(mmW - 1, Math.round((G.cam.x + VIEW_W) / sx) - 1);
+      const vy0 = Math.round(G.cam.y / sy), vy1 = Math.min(mmH - 1, Math.round((G.cam.y + VIEW_H) / sy) - 1);
       for (let mx = vx0; mx <= vx1; mx++) {
         put(x0 + mx, y0 + vy0, mx === vx0 ? '┌' : mx === vx1 ? '┐' : '─', '#e8e8d8');
         if (vy1 !== vy0) put(x0 + mx, y0 + vy1, mx === vx0 ? '└' : mx === vx1 ? '┘' : '─', '#e8e8d8');
@@ -520,7 +561,7 @@ export function makeGameScreen() {
         put(x0 + vx0, y0 + my, '│', '#e8e8d8');
         put(x0 + vx1, y0 + my, '│', '#e8e8d8');
       }
-      const dot = (x, y, ch, fg) => put(x0 + Math.min(MM.w - 1, (x / sx) | 0), y0 + Math.min(MM.h - 1, (y / sy) | 0), ch, fg);
+      const dot = (x, y, ch, fg) => put(x0 + Math.min(mmW - 1, (x / sx) | 0), y0 + Math.min(mmH - 1, (y / sy) | 0), ch, fg);
       for (const s of G.settlers) if (!s.away) dot(s.x, s.y, '·', '#e8e8d8');
       for (const r of G.raiders) dot(r.x, r.y, '•', (f >> 3) % 2 ? '#ff5040' : '#c03028');
       dot(G.camp.x, G.camp.y, '☼', '#ffd860');
@@ -712,6 +753,51 @@ function makePartyModal(locIdx) {
 }
 
 // ---------------------------------------------------------------- modals
+// AoE-style area orders: drag a box over the map, then say what the crew
+// should do with what's inside it.
+function makeOrdersMenu(b, info) {
+  const done = (fn, msg) => () => { fn(); if (msg) notice(msg); pop(); };
+  const rows = [];
+  const plural = (n) => n === 1 ? '' : 's';
+  if (info.trees) rows.push({ key: 't', fg: '#8ad080', label: `chop ${info.trees} tree${plural(info.trees)}`, act: done(() => assignArea(b, 'chop'), `Marked ${info.trees} trees to chop`) });
+  if (info.rocks) rows.push({ key: 'm', fg: '#a8a8a0', label: `mine ${info.rocks} rock${plural(info.rocks)}`, act: done(() => assignArea(b, 'mine'), `Marked ${info.rocks} rocks to mine`) });
+  if (info.bushes || info.water) {
+    const bits = [];
+    if (info.bushes) bits.push(`forage ${info.bushes} bush${info.bushes === 1 ? '' : 'es'}`);
+    if (info.water) bits.push(`fish ${info.water} water`);
+    rows.push({ key: 'g', fg: '#79c258', label: bits.join(' · '), act: done(() => assignArea(b, 'forage'), 'Gathering marks placed') });
+  }
+  if (rows.length >= 2) rows.push({ key: 'a', fg: '#ffd870', label: 'all of it', act: done(() => assignArea(b, 'all'), 'All work marked') });
+  if (info.marks) rows.push({ key: 'x', fg: '#e0a080', label: `clear ${info.marks} mark${plural(info.marks)}/plan${plural(info.marks)}`, act: done(() => clearAreaPlans(b), 'Marks and plans cleared') });
+
+  const w = Math.max(26, ...rows.map(r => r.label.length + 8));
+  const bh = rows.length + 3;
+  const x0 = Math.max(1, Math.min(VIEW_W - w - 1, b.x1 - G.cam.x + 2));
+  const y0 = Math.max(1, Math.min(VIEW_H - bh - 1, b.y0 - G.cam.y));
+  const scr = {
+    id: 'orders', modal: true, pausesSim: true, focus: 0,
+    onExit() { G.sel = null; },
+    widgets: rows.map((r, i) => ({
+      rect: { x: x0, y: y0 + 1 + i, w, h: 1 },
+      focusable: true,
+      onActivate: r.act,
+      draw(wd, focused) {
+        const bg = focused ? '#22304a' : '#101620';
+        if (focused) fillBg(x0, wd.rect.y, w, 1, bg);
+        str(x0 + 1, wd.rect.y, `${focused ? '►' : ' '}${r.key}) ${r.label}`, focused ? '#ffe8a0' : r.fg, bg);
+      },
+    })),
+    keymap: Object.fromEntries([...rows.map(r => [r.key, r.act]), ['Escape', () => pop()]]),
+    draw(f) {
+      fillBg(x0, y0, w, bh, '#101620');
+      str(x0 + 1, y0, `ORDERS — ${info.tiles} tiles`, '#e8c860', '#101620');
+      drawWidgets(this, f);
+      str(x0 + 1, y0 + bh - 1, 'Esc never mind', '#6a7484', '#101620');
+    },
+  };
+  return scr;
+}
+
 // Production orders live on the building: click a workshop to queue work.
 function makeWorkshopModal() {
   const x0 = 4, y0 = 4, w = 44;
@@ -830,9 +916,10 @@ function makeHelpModal() {
     ['parties into the world. When the commune falls, its story becomes', '#b8b2a0'],
     ['legacy — spend it on permanent perks for the next run.', '#b8b2a0'],
     ['', ''],
+    ['drag    a box on the map → orders menu: chop ♠ · mine ▲ ·', '#c8c2b0'],
+    ['        forage " · fish ≈ · clear marks (Esc to cancel)', '#c8c2b0'],
     ['b       build menu · tabs (←→): HOMES FOOD DEFENSE WORKS', '#c8c2b0'],
-    ['t/m/g   chop trees ♠ / mine rocks ▲ / forage bushes " + fish ≈', '#c8c2b0'],
-    ['x       cancel plans or demolish structures', '#c8c2b0'],
+    ['x       demolish structures / cancel single plans', '#c8c2b0'],
     ['w       world map — scout (1 settler) or raid (a party)', '#c8c2b0'],
     ['e       trade with the visiting caravan (every few days)', '#c8c2b0'],
     ['space   pause · 1/2/3 game speed · Esc close menus', '#c8c2b0'],

@@ -4,11 +4,12 @@
 //
 // Mapping (standard layout):
 //   d-pad / left stick  move cursor · navigate menus
-//   A (0)               confirm / act at cursor (hold to drag-paint)
+//   A (0)               confirm / act — press to anchor a selection box,
+//                       stretch with the stick, press again for orders
 //   B (1)               back / cancel
 //   X (2)               build menu
 //   Y (3)               world map
-//   LB/RB (4/5)         cycle tool: normal→build→chop→mine→forage→cancel
+//   LB/RB (4/5)         cycle tool: normal→build→demolish
 //   LT/RT (6/7)         game speed down / up
 //   Back (8)            help · Start (9) pause
 //   R3 (11)             toggle graphics mode

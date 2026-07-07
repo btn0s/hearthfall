@@ -63,8 +63,8 @@ world sites, stouter morale, +25% legacy income.
 | --- | --- |
 | `b` | build menu, tabbed (`←`/`→`): **HOMES** tents/cabins/longhouses · **FOOD** farms, campfire, kitchen · **DEFENSE** walls, door, traps, watch post · **WORKS** workshop, the Beacon |
 | click a workshop | production orders — queue spears and medkits, cancel for a refund |
-| `t` / `m` / `g` | designate: chop trees ♠ / mine rocks ▲ / forage bushes `"` and fish water ≈ |
-| `x` | cancel plans / demolish |
+| drag on the map | select an area, then pick from the orders menu: chop trees ♠ · mine rocks ▲ · forage bushes `"` · fish water ≈ · clear marks |
+| `x` | demolish / cancel single plans |
 | `w` | world map — send one settler to scout a site, or a party to take it |
 | `e` | trade with the visiting caravan (arrives every few days) |
 | `space` | pause · `1/2/3` game speed · `?` help · `Esc` close menus |

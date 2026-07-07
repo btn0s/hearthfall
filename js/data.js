@@ -200,7 +200,7 @@ export const LOC_B = ['Creek', 'Ridge', 'Mill', 'Crossing', 'Hollow', 'Orchard',
 // Tutorial objective chain shown one at a time in the sidebar. Checks read G,
 // so only the index (G.objIdx) and stat counters need saving.
 export const OBJECTIVES = [
-  { id: 'chop', text: 'Chop 4 trees', hint: 't, drag across trees', prog: g => [Math.min(4, g.stats.chopped || 0), 4], check: g => (g.stats.chopped || 0) >= 4, reward: { wood: 5 } },
+  { id: 'chop', text: 'Chop 4 trees', hint: 'drag a box over trees', prog: g => [Math.min(4, g.stats.chopped || 0), 4], check: g => (g.stats.chopped || 0) >= 4, reward: { wood: 5 } },
   { id: 'farm', text: 'Build 2 farm plots', hint: 'b → FOOD a, on grass', prog: g => [Math.min(2, g.stats.farmsBuilt || 0), 2], check: g => (g.stats.farmsBuilt || 0) >= 2, reward: { food: 5 } },
   { id: 'bed', text: 'Pitch a tent', hint: 'b → HOMES a · sleeps 2', check: g => (g.stats.bedsBuilt || 0) >= 1 },
   { id: 'guard2', text: 'Train a 2nd guard', hint: 'click a name → role', check: g => g.settlers.filter(s => s.role === 'guard').length >= 2 },
@@ -218,7 +218,7 @@ export const OBJECTIVES = [
 
 // One-time contextual tips (seen-set persists in localStorage).
 export const TIPS = {
-  welcome: 'Settlers work on their own — you set the plans. Follow the OBJECTIVE box in the sidebar, and press ? anytime for help.',
+  welcome: 'Settlers work on their own — you set the plans. Drag a box on the map to give orders (chop, mine, fish...). Follow the OBJECTIVE box in the sidebar; ? for help.',
   night: 'Night falls. Settlers head indoors to rest and heal; anyone without a roof sleeps rough and recovers slowly. Pitch tents early.',
   foodlow: 'Food is running low! Build farm plots (b), harvest ripe crops, or send a party to an old farmstead (w).',
   raidwarn: 'Raiders strike at dusk today! Train guards (click names), close your walls with one door, lay spike traps outside it.',

@@ -22,7 +22,7 @@ function makeState() {
     res: { food: 25, meals: 0, wood: 40, stone: 12, scrap: 2, herbs: 0, coin: 4, weapons: 1, meds: 1 },
     settlers: [], raiders: [], log: [], notice: null,
     morale: 65, beaconDay: 0,
-    mode: 'NORMAL', buildSel: null, cursor: { x: -1, y: -1 }, cam: { x: 0, y: 0 },
+    mode: 'NORMAL', buildSel: null, sel: null, cursor: { x: -1, y: -1 }, cam: { x: 0, y: 0 },
     raidNext: 3, raidActive: false, raidTimer: 0, raidIsHorde: false, banditsCleared: 0,
     world: null, expeditions: [],
     craftQueue: [], trader: null,
@@ -121,7 +121,7 @@ export function save() {
   const data = {
     ...G,
     usedNames: [...G.usedNames],
-    buildSel: null, notice: null, tip: null,
+    buildSel: null, notice: null, tip: null, sel: null,
     mode: 'NORMAL', cursor: { x: -1, y: -1 },
   };
   try { localStorage.setItem(SAVE_KEY, JSON.stringify(data)); } catch (e) { /* ignore */ }
@@ -1118,6 +1118,49 @@ export function designate(x, y, kind) {
   if (kind === 'forage' && tl.t === 'bush') tl.desig = 'forage';
   if (kind === 'forage' && tl.t === 'water') { // the same tool casts a line
     if (tl.desig !== 'fish') { tl.desig = 'fish'; tip('fish'); }
+  }
+}
+
+// ------------------------------------------------- area selection (marquee)
+// Normalized bounds of the current selection rect.
+export function selBounds(sel = G.sel) {
+  if (!sel) return null;
+  return {
+    x0: Math.max(0, Math.min(sel.ax, sel.bx)), y0: Math.max(0, Math.min(sel.ay, sel.by)),
+    x1: Math.min(MAP_W - 1, Math.max(sel.ax, sel.bx)), y1: Math.min(MAP_H - 1, Math.max(sel.ay, sel.by)),
+  };
+}
+
+// What work the selection could take: counts drive the orders menu.
+export function selectionInfo(b) {
+  const info = { trees: 0, rocks: 0, bushes: 0, water: 0, marks: 0, tiles: 0 };
+  for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
+    const tl = tileAt(x, y);
+    info.tiles++;
+    if (tl.desig || tl.build) { info.marks++; continue; }
+    if (tl.t === 'tree') info.trees++;
+    else if (tl.t === 'rock') info.rocks++;
+    else if (tl.t === 'bush') info.bushes++;
+    else if (tl.t === 'water') info.water++;
+  }
+  return info;
+}
+
+// Apply an order to every eligible tile in the rect.
+export function assignArea(b, kind) {
+  for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
+    if (kind === 'all' || kind === 'chop') designate(x, y, 'chop');
+    if (kind === 'all' || kind === 'mine') designate(x, y, 'mine');
+    if (kind === 'all' || kind === 'forage') designate(x, y, 'forage');
+  }
+}
+
+// Clear marks and unbuilt plans in the rect (never touches finished structures).
+export function clearAreaPlans(b) {
+  for (let y = b.y0; y <= b.y1; y++) for (let x = b.x0; x <= b.x1; x++) {
+    const tl = tileAt(x, y);
+    if (tl.build) { refund(buildDef(tl.build.id).cost); delete tl.build; delete tl.claim; }
+    if (tl.desig) { delete tl.desig; delete tl.claim; delete tl.fishCd; }
   }
 }
 

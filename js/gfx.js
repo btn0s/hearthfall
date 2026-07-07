@@ -21,7 +21,8 @@ export function toggleGfx() {
   GFX.mode = GFX.mode === 'tiles' ? 'ascii' : 'tiles';
   try { localStorage.setItem('hearthfall.gfx', GFX.mode); } catch (e) { /* ignore */ }
 }
-export const MM = { w: 26, h: 14, on: (() => { try { return localStorage.getItem('hearthfall.minimap') !== 'off'; } catch (e) { return true; } })() };
+// Minimap visibility (its size/position live in the sidebar layout).
+export const MM = { on: (() => { try { return localStorage.getItem('hearthfall.minimap') !== 'off'; } catch (e) { return true; } })() };
 export function toggleMinimap() {
   MM.on = !MM.on;
   try { localStorage.setItem('hearthfall.minimap', MM.on ? 'on' : 'off'); } catch (e) { /* ignore */ }
