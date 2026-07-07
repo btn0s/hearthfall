@@ -396,6 +396,12 @@ function sprite(a, t, x, y, f) {
   return null;
 }
 
+// The mobile landing borrows the atlas to draw itself with real game art.
+export function getAtlas() {
+  if (!A) A = buildAtlas();
+  return A;
+}
+
 export function drawMapTiles(ctx, f) {
   if (!A) A = buildAtlas();
   ctx.save();

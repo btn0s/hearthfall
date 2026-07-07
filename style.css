@@ -14,3 +14,87 @@ canvas {
   max-width: 100vw;
   max-height: 100vh;
 }
+
+/* ---- the mobile hearth: small or touch-only screens get the title screen ---- */
+#mobile-gate {
+  display: none;
+  font-family: Menlo, Consolas, "DejaVu Sans Mono", monospace;
+  text-align: center;
+  color: #b8b2a0;
+  padding: 1.5rem 1rem 1rem;
+  max-width: 26rem;
+  background: #0c0d10;
+}
+#mobile-gate .fire {
+  font-size: 1.3rem;
+  color: #ff9030;
+  text-shadow: 0 0 14px rgba(255, 144, 48, 0.7);
+  animation: flicker 1.4s infinite;
+  margin-bottom: 0.4rem;
+}
+/* the title screen's wordmark and a living scene, drawn by the game itself */
+#mg-logo { display: block; margin: 0 auto; image-rendering: pixelated; }
+#mg-scene {
+  display: block;
+  margin: 0 auto 1.3rem;
+  image-rendering: pixelated;
+  border: 1px solid #232733;
+}
+#mobile-gate .tag {
+  margin: 0.7rem 0 1.5rem;
+  color: #8a94a2;
+  font-size: 0.72rem;
+}
+#mobile-gate .panel {
+  position: relative;
+  border: 1px solid #3a3f4a;
+  background: #131622;
+  padding: 1.1rem 1rem 0.6rem;
+  margin: 0 0 1.1rem;
+  text-align: left;
+}
+#mobile-gate .panel-title {
+  position: absolute;
+  top: -0.6rem;
+  left: 0.6rem;
+  background: #0c0d10;
+  padding: 0 0.4rem;
+  color: #c8b890;
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+}
+#mobile-gate .panel p {
+  margin: 0 0 0.6rem;
+  font-size: 0.82rem;
+  line-height: 1.65;
+  color: #c8c2b0;
+}
+#mobile-gate .panel.cta { text-align: center; border-color: #5a4a28; }
+#mobile-gate .panel.cta p { color: #e8d8b0; }
+#mobile-gate .panel.cta strong { color: #ffd860; font-size: 1rem; }
+#mobile-gate .log {
+  border-top: 1px solid #3a3f4a;
+  padding-top: 0.7rem;
+  text-align: left;
+  font-size: 0.58rem;
+  line-height: 1.8;
+  white-space: nowrap;
+  overflow: hidden;
+}
+#mobile-gate .log .d { color: #7a8a9a; }
+#mobile-gate .log .w { color: #ff5040; }
+#mobile-gate .log .c { color: #a8c8e8; }
+#mobile-gate .log .r { color: #e0a040; }
+#mobile-gate .log .g { color: #ffd860; }
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  45% { opacity: 0.75; }
+  55% { opacity: 0.95; }
+  70% { opacity: 0.65; }
+}
+
+/* the game wants a keyboard and ~1100px of grid; phones get the hearth */
+@media (max-width: 899px), ((pointer: coarse) and (max-width: 1200px)) {
+  canvas { display: none; }
+  #mobile-gate { display: block; }
+}
