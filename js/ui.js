@@ -90,7 +90,7 @@ export function setupInput(canvas) {
 
   window.addEventListener('keydown', e => {
     dispatchKey(e.key, { shift: e.shiftKey });
-    if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.key)) e.preventDefault();
+    if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key)) e.preventDefault();
   });
 
   canvas.addEventListener('contextmenu', e => {

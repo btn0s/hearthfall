@@ -3,15 +3,15 @@
 // clicking, focus, and drawing always agree.
 import {
   G, tileAt, inMap, timeStr, communeTier, hasSave, loadGame, newGame, save,
-  adjustedOffer, doTrade, tryPlaceBuild, designate, cancelAt, queueCraft, cycleRole,
-  notice, tip, centerCam,
+  adjustedOffer, doTrade, tryPlaceBuild, designate, cancelAt, queueCraft, unqueueCraft, cycleRole,
+  notice, tip, centerCam, season, isWinter, daysToWinter, moraleLabel, traitName, housingCap,
 } from './game.js';
 import {
-  MAP_W, MAP_H, VIEW_W, VIEW_H, T, BUILDS, COST_ABBR, ROLE_COLORS, ROLE_LETTER,
-  LOCTYPES, CIVS, PERKS, TRADE, OBJECTIVES, INTRO,
+  MAP_W, MAP_H, VIEW_W, VIEW_H, T, BUILDS, BUILD_TABS, CRAFTS, COST_ABBR, ROLE_COLORS, ROLE_LETTER,
+  LOCTYPES, CIVS, CIV_UNLOCKS, PERKS, TRADE, OBJECTIVES, INTRO,
 } from './data.js';
-import { WORLD_W, WORLD_H, partyPower, riskLabel, genWorld, startExpedition } from './world.js';
-import { META, hasPerk, buyPerk } from './meta.js';
+import { WORLD_W, WORLD_H, partyPower, riskLabel, dangerStr, genWorld, startExpedition } from './world.js';
+import { META, hasPerk, perkLevel, buyPerk, civUnlocked } from './meta.js';
 import { drawMapTiles } from './tiles.js';
 import { drawWorldAscii, MM_COL, inspectText, panCam } from './mapdraw.js';
 import * as gfx from './gfx.js';
@@ -130,20 +130,27 @@ export function makeCivScreen() {
     widgets: CIVS.map((c, i) => ({
       rect: { x: ox - 2, y: 6 + i * 4, w: 62, h: 3 },
       focusable: true,
-      onActivate: () => beginRun(c.id),
+      disabled: () => !civUnlocked(c.id),
+      onActivate: () => { if (civUnlocked(c.id)) beginRun(c.id); },
       draw(w, focused) {
+        const locked = !civUnlocked(c.id);
         const bg = focused ? '#1c2230' : undefined;
         if (focused) fillBg(w.rect.x, w.rect.y, w.rect.w, 3, '#1c2230');
         str(w.rect.x, w.rect.y, focused ? '►' : ' ', '#ffd860', bg);
-        str(ox, w.rect.y, `${i + 1})  ${c.ch} ${c.name}`, focused ? '#ffe8a0' : c.fg, bg);
-        str(ox + 4, w.rect.y + 1, c.desc, '#8a94a2', bg);
-        str(ox + 4, w.rect.y + 2, c.desc2, '#8a94a2', bg);
+        str(ox, w.rect.y, `${i + 1})  ${c.ch} ${c.name}${locked ? '   ⊘ LOCKED' : ''}`, locked ? '#5a5f6a' : (focused ? '#ffe8a0' : c.fg), bg);
+        if (locked) {
+          str(ox + 4, w.rect.y + 1, `Unlock: ${CIV_UNLOCKS[c.id].desc}`, '#7a6a50', bg);
+          str(ox + 4, w.rect.y + 2, `(lifetime: ${META.life.sites} sites cleared · ${META.life.raids} raids repelled)`, '#5a5f6a', bg);
+        } else {
+          str(ox + 4, w.rect.y + 1, c.desc, '#8a94a2', bg);
+          str(ox + 4, w.rect.y + 2, c.desc2, '#8a94a2', bg);
+        }
       },
     })),
     keymap: { Escape: () => pop() },
     onKey(k) {
       const i = +k - 1;
-      if (i >= 0 && i < CIVS.length) beginRun(CIVS[i].id);
+      if (i >= 0 && i < CIVS.length && civUnlocked(CIVS[i].id)) beginRun(CIVS[i].id);
     },
     draw(f) {
       str(((GRID_W - 18) / 2) | 0, 2, 'CHOOSE YOUR PEOPLE', '#ffd860');
@@ -167,18 +174,20 @@ export function makeLegacyScreen() {
       focusable: true,
       onActivate: () => buyPerk(p.id),
       draw(w, focused) {
-        const owned = hasPerk(p.id);
+        const lvl = perkLevel(p.id), max = p.max || 1;
+        const maxed = lvl >= max;
         const afford = META.points >= p.cost;
         if (focused) fillBg(w.rect.x, w.rect.y, w.rect.w, 1, '#1c2230');
-        const fg = owned ? '#8ad080' : afford ? '#e8d8a0' : '#5a5f6a';
+        const tag = maxed ? (max > 1 ? `Lv${lvl} MAX` : '  OWNED') : lvl > 0 ? `Lv${lvl} ◆${p.cost}` : `◆${p.cost}`;
+        const fg = maxed ? '#8ad080' : afford ? '#e8d8a0' : '#5a5f6a';
         str(w.rect.x, w.rect.y, focused ? '►' : ' ', '#ffd860', focused ? '#1c2230' : undefined);
-        str(ox, w.rect.y, `${i + 1}) ${p.name.padEnd(16)} ${owned ? '  OWNED' : `◆${p.cost}`.padStart(7)}   ${p.desc}`.slice(0, 66),
-          focused ? (owned ? '#8ad080' : '#ffe8a0') : fg, focused ? '#1c2230' : undefined);
+        str(ox, w.rect.y, `${(i + 1) % 10}) ${p.name.padEnd(19).slice(0, 19)} ${tag.padStart(9)}   ${p.desc}`.slice(0, 68),
+          focused ? (maxed ? '#8ad080' : '#ffe8a0') : fg, focused ? '#1c2230' : undefined);
       },
     })),
     keymap: { Escape: () => pop() },
     onKey(k) {
-      const i = +k - 1;
+      const i = k === '0' ? 9 : +k - 1;
       if (i >= 0 && i < PERKS.length) buyPerk(PERKS[i].id);
     },
     draw(f) {
@@ -198,15 +207,16 @@ const TOOL_MODES = ['NORMAL', 'BUILD', 'CHOP', 'MINE', 'FORAGE', 'CANCEL'];
 
 // single source of truth for sidebar row positions (draw + hit share this)
 function sidebarLayout() {
-  let y = 8; // 0-3 header block, 4-7 resources
+  let y = 10; // 0-5 header block (incl. season + morale), 6-9 resources
   if (G.raidActive) y++;
   if (G.trader) y++;
   if (G.craftQueue.length) y++;
+  if (G.beaconDay) y++;
   const objY = y;
   y += (G.objIdx < OBJECTIVES.length) ? 3 : 1;
   const setHdrY = y;
   const settlerY = y + 1;
-  const shown = Math.min(G.settlers.length, 14);
+  const shown = Math.min(G.settlers.length, 12);
   y = settlerY + shown;
   const expedY = G.expeditions.length ? y : -1;
   return { objY, setHdrY, settlerY, shown, expedY };
@@ -242,6 +252,7 @@ function paintCell(x, y, isDrag) {
   else if (G.mode === 'CANCEL') { if (!isDrag) cancelAt(x, y); }
   else if (G.mode === 'NORMAL' && !isDrag) {
     if (G.trader && G.trader.x === x && G.trader.y === y) { push(makeTradeModal()); return; }
+    if (tileAt(x, y).t === 'workshop') { push(makeWorkshopModal()); return; }
     const s = G.settlers.find(s => !s.away && s.x === x && s.y === y);
     if (s) cycleRole(s);
   }
@@ -249,13 +260,13 @@ function paintCell(x, y, isDrag) {
 
 function selectBuild(scr, def) {
   if (!def) return;
-  if (def.craft) queueCraft(def);
-  else G.buildSel = def;
+  G.buildSel = def;
 }
 
 export function makeGameScreen() {
+  const tabBuilds = () => BUILDS.filter(b => b.cat === BUILD_TABS[scr.buildTab].id);
   const scr = {
-    id: 'game', modal: false, listNav: false, focus: 0, buildFocus: 0,
+    id: 'game', modal: false, listNav: false, focus: 0, buildFocus: 0, buildTab: 0,
 
     widgets() {
       const ws = [];
@@ -276,10 +287,13 @@ export function makeGameScreen() {
       }
       if (G.mode === 'BUILD') {
         if (G.buildSel) {
-          ws.push({ rect: { x: 1, y: 1, w: 36, h: 1 }, onClick: () => { G.buildSel = null; } });
+          ws.push({ rect: { x: 1, y: 1, w: 40, h: 1 }, onClick: () => { G.buildSel = null; } });
         } else {
-          BUILDS.forEach((b, i) => {
-            ws.push({ rect: { x: 1, y: 2 + i, w: 36, h: 1 }, onClick: () => selectBuild(scr, b) });
+          BUILD_TABS.forEach((t, i) => {
+            ws.push({ rect: { x: 2 + i * 9, y: 2, w: 9, h: 1 }, onClick: () => { scr.buildTab = i; scr.buildFocus = 0; } });
+          });
+          tabBuilds().forEach((b, i) => {
+            ws.push({ rect: { x: 1, y: 3 + i, w: 40, h: 1 }, onClick: () => selectBuild(scr, b) });
           });
         }
       }
@@ -295,11 +309,14 @@ export function makeGameScreen() {
       if (k === 'PAN_DOWN' || (mods.shift && k === 'ArrowDown')) return panCam(0, P);
 
       if (G.mode === 'BUILD') {
-        if (/^[a-m]$/.test(k)) { selectBuild(scr, BUILDS.find(b => b.key === k)); return; }
+        const tb = tabBuilds();
+        if (/^[a-e]$/.test(k)) { selectBuild(scr, tb.find(b => b.key === k)); return; }
         if (!G.buildSel) {
-          if (k === 'ArrowUp') { scr.buildFocus = (scr.buildFocus + BUILDS.length - 1) % BUILDS.length; return; }
-          if (k === 'ArrowDown') { scr.buildFocus = (scr.buildFocus + 1) % BUILDS.length; return; }
-          if (k === 'Enter') { selectBuild(scr, BUILDS[scr.buildFocus]); return; }
+          if (k === 'ArrowLeft' || (k === 'Tab' && mods.shift)) { scr.buildTab = (scr.buildTab + BUILD_TABS.length - 1) % BUILD_TABS.length; scr.buildFocus = 0; return; }
+          if (k === 'ArrowRight' || k === 'Tab') { scr.buildTab = (scr.buildTab + 1) % BUILD_TABS.length; scr.buildFocus = 0; return; }
+          if (k === 'ArrowUp') { scr.buildFocus = (scr.buildFocus + tb.length - 1) % tb.length; return; }
+          if (k === 'ArrowDown') { scr.buildFocus = (scr.buildFocus + 1) % tb.length; return; }
+          if (k === 'Enter') { selectBuild(scr, tb[scr.buildFocus]); return; }
         }
         if (k === 'Escape') {
           if (G.buildSel) G.buildSel = null;
@@ -390,15 +407,29 @@ export function makeGameScreen() {
       const tier = communeTier();
       const tierStr = tier === 3 ? 'Tier III' : tier === 2 ? 'Tier II (9☺→III)' : 'Tier I (6☺→II)';
       str(SB_X, y++, `${civ ? civ.name.replace('The ', '') : ''} · ${tierStr}`.slice(0, 26), civ ? civ.fg : '#b8b2a0');
+      const sn = season();
+      const dayInSeason = ((G.day - 1) % 5) + 1;
+      const dtw = daysToWinter();
+      const winterNote = isWinter() ? 'endure' : `❄ in ${dtw}d`;
+      str(SB_X, y++, `${sn.ch} ${sn.name} ${dayInSeason}/5 · ${winterNote}`.slice(0, 26), sn.fg);
+      const mb = Math.max(0, Math.min(8, Math.round(G.morale / 100 * 8)));
+      const mCol = G.morale >= 75 ? '#8ad080' : G.morale >= 50 ? '#c8c2b0' : G.morale >= 35 ? '#e0c060' : '#e05040';
+      str(SB_X, y, 'Morale ', '#8a94a2');
+      str(SB_X + 7, y, '█'.repeat(mb) + '░'.repeat(8 - mb), mCol);
+      str(SB_X + 16, y++, ` ${moraleLabel()}`.slice(0, 10), mCol);
       str(SB_X, y++, '─'.repeat(25), '#3a3f4a');
       const R = G.res;
       str(SB_X, y++, `Food ${String(R.food).padEnd(4)}Meals ${R.meals}`, '#c8c2b0');
       str(SB_X, y++, `Wood ${String(R.wood).padEnd(4)}Stone ${R.stone}`, '#a8a296');
       str(SB_X, y++, `Scrap ${String(R.scrap).padEnd(3)}Herbs ${R.herbs}`, '#a8a296');
       str(SB_X, y++, `Coin ${String(R.coin).padEnd(4)}Wpn ${R.weapons}  Med ${R.meds}`, '#d8c860');
-      if (G.raidActive) str(SB_X, y++, `⚠ RAIDERS: ${G.raiders.length}`, (f >> 3) % 2 ? '#ff5040' : '#a03028');
+      if (G.raidActive) str(SB_X, y++, `⚠ ${G.raidIsHorde ? 'HORDE' : 'RAIDERS'}: ${G.raiders.length}`, (f >> 3) % 2 ? '#ff5040' : '#a03028');
       if (G.trader) str(SB_X, y++, '¤ trader in camp — e trade', '#ffd860');
       if (G.craftQueue.length) str(SB_X, y++, `Ω workshop queue: ${G.craftQueue.length}`, '#c08a50');
+      if (G.beaconDay) {
+        const hold = Math.max(0, G.beaconDay + 3 - G.day);
+        str(SB_X, y++, `☼ BEACON — hold ${hold}d more`, (f >> 3) % 2 ? '#ffe060' : '#b09030');
+      }
       // objective tracker
       if (G.objIdx < OBJECTIVES.length) {
         const o = OBJECTIVES[G.objIdx];
@@ -410,12 +441,14 @@ export function makeGameScreen() {
       } else {
         str(SB_X, lay.objY, '◆ all objectives complete', '#c8a0e8');
       }
-      str(SB_X, lay.setHdrY, `─ SETTLERS (${G.settlers.length}) ` + '─'.repeat(Math.max(0, 10 - String(G.settlers.length).length)), '#3a3f4a');
+      const hdr = `─ SETTLERS ${G.settlers.length} · roofs ⌂${housingCap()} `;
+      str(SB_X, lay.setHdrY, (hdr + '─'.repeat(Math.max(0, 25 - hdr.length))).slice(0, 26), '#3a3f4a');
       G.settlers.slice(0, lay.shown).forEach((s, i) => {
         const yy = lay.settlerY + i;
         const bar = hpBar(s.hp, s.maxHp, 6);
         let status = '';
         if (s.away) status = '→away';
+        else if (s.downed) status = 'DOWN';
         else if (s.sleeping) status = 'zzz';
         else if (s.starving) status = 'HUNGRY';
         else if (s.task) status = s.task.kind;
@@ -437,7 +470,7 @@ export function makeGameScreen() {
       const hint = (a, b) => { str(SB_X, hy++, a, '#8a94a2'); if (b) str(SB_X, hy++, b, '#8a94a2'); };
       if (G.mode === 'BUILD') {
         str(SB_X, hy++, 'MODE: BUILD', '#e8c860');
-        hint(G.buildSel ? `→ ${G.buildSel.name}` : 'pick a-m from menu');
+        hint(G.buildSel ? `→ ${G.buildSel.name}` : '←→ tabs · a-e picks');
         hint('click/drag map to place', 'Esc to finish');
       } else if (G.mode === 'CHOP') {
         str(SB_X, hy++, 'MODE: CHOP', '#e8c860');
@@ -446,8 +479,8 @@ export function makeGameScreen() {
         str(SB_X, hy++, 'MODE: MINE', '#e8c860');
         hint('drag across rocks ▲', 'Esc done');
       } else if (G.mode === 'FORAGE') {
-        str(SB_X, hy++, 'MODE: FORAGE', '#e8c860');
-        hint('drag across bushes "', 'Esc done');
+        str(SB_X, hy++, 'MODE: FORAGE/FISH', '#e8c860');
+        hint('drag bushes " · water ≈', 'Esc done');
       } else if (G.mode === 'CANCEL') {
         str(SB_X, hy++, 'MODE: CANCEL/DEMOLISH', '#e8c860');
         hint('click plans/structures', 'Esc done');
@@ -494,7 +527,7 @@ export function makeGameScreen() {
     },
 
     drawBuildMenu() {
-      const x0 = 1, y0 = 1, w = 36;
+      const x0 = 1, y0 = 1, w = 40;
       const tier = communeTier();
       if (G.buildSel) {
         const cost = Object.entries(G.buildSel.cost).map(([k, v]) => v + (COST_ABBR[k] || k)).join(' ');
@@ -502,10 +535,15 @@ export function makeGameScreen() {
         str(x0 + 1, y0, `BUILD: ${G.buildSel.name} (${cost}) · Esc = menu`, '#e8c860', '#12141c');
         return;
       }
-      fillBg(x0, y0, w, BUILDS.length + 2, '#12141c');
-      str(x0 + 1, y0, 'BUILD — click map to place', '#e8c860');
-      BUILDS.forEach((b, i) => {
-        const y = y0 + 1 + i;
+      const tb = tabBuilds();
+      fillBg(x0, y0, w, tb.length + 3, '#12141c');
+      str(x0 + 1, y0, 'BUILD — ←→ tab · click to place', '#e8c860');
+      BUILD_TABS.forEach((t, i) => {
+        const on = i === scr.buildTab;
+        str(x0 + 1 + i * 9, y0 + 1, ` ${t.name} `, on ? '#ffe8a0' : '#6a7484', on ? '#2a3048' : '#12141c');
+      });
+      tb.forEach((b, i) => {
+        const y = y0 + 2 + i;
         const afford = Object.entries(b.cost).every(([k, v]) => G.res[k] >= v);
         const locked = b.tier && b.tier > tier;
         const focus = i === scr.buildFocus;
@@ -513,9 +551,9 @@ export function makeGameScreen() {
         const bg = focus ? '#1c2230' : '#12141c';
         const cost = Object.entries(b.cost).map(([k, v]) => v + (COST_ABBR[k] || k)).join(' ');
         const glyph = T[b.id] ? T[b.id].ch : '/';
-        const tag = locked ? ` T${b.tier}!` : (b.craft ? ' ⚒' : '');
+        const tag = locked ? ` T${b.tier}!` : b.note ? ` ${b.note}` : '';
         const fg = afford && !locked ? (focus ? '#ffe8a0' : '#c8c2b0') : '#5a5f6a';
-        str(x0 + 1, y, `${focus ? '►' : ' '}${b.key}) ${glyph} ${b.name.padEnd(12)} ${cost}${tag}`, fg, bg);
+        str(x0 + 1, y, `${focus ? '►' : ' '}${b.key}) ${glyph} ${b.name.padEnd(11)} ${cost}${tag}`.slice(0, w - 1), fg, bg);
       });
     },
   };
@@ -543,7 +581,7 @@ export function makeWorldScreen() {
         },
         draw(w, focused, f) {
           const lt = LOCTYPES[l.type];
-          const stars = '★'.repeat(Math.max(1, Math.min(5, Math.round(l.diff / 3))));
+          const stars = '★'.repeat(Math.max(1, Math.min(5, Math.round(l.diff / 3)))) + (l.scouted ? '' : '?');
           const fg = l.cleared ? '#555a60' : (focused ? '#ffe8a0' : '#b8b2a0');
           if (focused) fillBg(w.rect.x, w.rect.y, w.rect.w, 1, '#22283a');
           str(px, w.rect.y, `${focused ? '►' : ' '}${lt.ch} ${l.name.padEnd(15)} ${l.cleared ? '✓done' : stars}`, fg, focused ? '#22283a' : undefined);
@@ -585,8 +623,10 @@ export function makeWorldScreen() {
         const lt = LOCTYPES[selLoc.type];
         str(px, dy++, `${lt.name}: "${selLoc.name}"`, lt.fg);
         str(px, dy++, lt.desc.slice(0, 42), '#8a94a2');
-        str(px, dy++, `Danger ~${selLoc.diff}   Travel ${(selLoc.travel / 1440).toFixed(1)}d each way`, '#a8a296');
-        str(px, dy++, `${G.settlers.filter(s => !s.away).length} settlers available at home`, '#8a94a2');
+        str(px, dy++, `Danger ${dangerStr(selLoc)}${selLoc.scouted ? '' : ' (unscouted)'}   Travel ${(selLoc.travel / 1440).toFixed(1)}d`, '#a8a296');
+        if (selLoc.type === 'bandits' && !selLoc.cleared) str(px, dy++, 'It grows bolder every day it stands.', '#e0a040');
+        str(px, dy++, `${G.settlers.filter(s => !s.away && !s.downed).length} settlers fit to travel`, '#8a94a2');
+        str(px, dy++, 'send ONE settler to scout it safely', '#6a7484');
       }
       dy++;
       for (const e of G.expeditions) {
@@ -602,15 +642,16 @@ export function makeWorldScreen() {
 }
 
 function makePartyModal(locIdx) {
+  tip('scout');
   const sel = new Set();
-  const avail = () => G.settlers.filter(s => !s.away);
-  const bw = 46;
+  const avail = () => G.settlers.filter(s => !s.away && !s.downed);
+  const bw = 52;
   const x0 = ((GRID_W - bw) / 2) | 0;
   const scr = {
     id: 'party', modal: true, focus: avail().length, // focus starts on LAUNCH
     widgets() {
       const a = avail();
-      const bh = a.length + 6;
+      const bh = a.length + 7;
       const y0 = ((GRID_H - bh) / 2) | 0;
       const ws = a.map((s, i) => ({
         rect: { x: x0, y: y0 + 2 + i, w: bw, h: 1 },
@@ -620,7 +661,7 @@ function makePartyModal(locIdx) {
           const on = sel.has(s.id);
           const bg = focused ? '#22304a' : '#141824';
           if (focused) fillBg(x0, w.rect.y, bw, 1, bg);
-          str(x0 + 1, w.rect.y, `${focused ? '►' : ' '}${i + 1} [${on ? 'x' : ' '}] ${s.name.padEnd(8)} ${s.role.padEnd(6)} hp${String(Math.ceil(s.hp)).padEnd(3)}`, on ? '#ffe8a0' : '#b8b2a0', bg);
+          str(x0 + 1, w.rect.y, `${focused ? '►' : ' '}${i + 1} [${on ? 'x' : ' '}] ${s.name.padEnd(8)} ${s.role.padEnd(6)} hp${String(Math.ceil(s.hp)).padEnd(3)} ${traitName(s).toLowerCase()}`, on ? '#ffe8a0' : '#b8b2a0', bg);
         },
       }));
       ws.push({
@@ -649,7 +690,7 @@ function makePartyModal(locIdx) {
     draw(f) {
       const loc = G.world.locs[locIdx];
       const a = avail();
-      const bh = a.length + 6;
+      const bh = a.length + 7;
       const y0 = ((GRID_H - bh) / 2) | 0;
       fillBg(x0, y0, bw, bh, '#141824');
       str(x0 + 1, y0, `SEND PARTY → ${loc.name}`, '#ffd860', '#141824');
@@ -657,14 +698,73 @@ function makePartyModal(locIdx) {
       drawWidgets(this, f);
       const members = a.filter(s => sel.has(s.id));
       const pw = Math.round(partyPower(members));
-      const risk = members.length ? riskLabel(pw, loc.diff) : { label: '—', fg: '#8a94a2' };
-      str(x0 + 1, y0 + bh - 3, `Party power ~${pw} vs danger ~${Math.round(loc.diff * 2.6)}  Risk: ${risk.label}`, risk.fg, '#141824');
+      const risk = members.length ? riskLabel(pw, loc) : { label: '—', fg: '#8a94a2' };
+      if (members.length === 1) {
+        str(x0 + 1, y0 + bh - 4, '⚑ one rider = SCOUT: fast, safe, reveals danger', '#9ac0d8', '#141824');
+        str(x0 + 1, y0 + bh - 3, 'no assault will be made', '#6a7484', '#141824');
+      } else {
+        str(x0 + 1, y0 + bh - 4, `Party power ~${pw} vs danger ${dangerStr(loc)} ×2.6`, risk.fg, '#141824');
+        str(x0 + 1, y0 + bh - 3, `Risk: ${risk.label}${loc.scouted ? '' : '  (scout for true numbers)'}`, risk.fg, '#141824');
+      }
     },
   };
   return scr;
 }
 
 // ---------------------------------------------------------------- modals
+// Production orders live on the building: click a workshop to queue work.
+function makeWorkshopModal() {
+  const x0 = 4, y0 = 4, w = 44;
+  const bh = CRAFTS.length + 6;
+  const queueStr = () => {
+    if (!G.craftQueue.length) return 'orders: none';
+    const counts = {};
+    for (const id of G.craftQueue) counts[id] = (counts[id] || 0) + 1;
+    return 'orders: ' + Object.entries(counts)
+      .map(([id, n]) => `${(CRAFTS.find(c => c.id === id) || { name: id }).name.replace(/^(Craft|Brew) /, '')}${n > 1 ? ` ×${n}` : ''}`)
+      .join(', ');
+  };
+  const scr = {
+    id: 'workshop', modal: true, focus: 0,
+    update() { if (!G.tiles.some(tl => tl.t === 'workshop')) pop(); }, // burned down mid-order
+    widgets: CRAFTS.map((c, i) => ({
+      rect: { x: x0, y: y0 + 3 + i, w, h: 1 },
+      focusable: true,
+      onActivate: () => queueCraft(c),
+      draw(wd, focused) {
+        const cost = Object.entries(c.cost).map(([k, v]) => `${v} ${k}`).join(', ');
+        const afford = Object.entries(c.cost).every(([k, v]) => G.res[k] >= v);
+        const bg = focused ? '#22304a' : '#161a10';
+        if (focused) fillBg(x0, wd.rect.y, w, 1, bg);
+        str(x0 + 1, wd.rect.y, `${focused ? '►' : ' '}${i + 1}) ${c.name.padEnd(12)} ${cost}`, afford ? (focused ? '#ffe8a0' : '#c8c2b0') : '#5a5f6a', bg);
+      },
+    })).concat([{
+      rect: { x: x0, y: y0 + 4 + CRAFTS.length, w, h: 1 },
+      focusable: true,
+      onActivate: () => unqueueCraft(),
+      draw(wd, focused) {
+        const bg = focused ? '#22304a' : '#161a10';
+        if (focused) fillBg(x0, wd.rect.y, w, 1, bg);
+        str(x0 + 1, wd.rect.y, `${focused ? '►' : ' '}x) cancel last order (refund)`, G.craftQueue.length ? '#e0a080' : '#5a5f6a', bg);
+      },
+    }]),
+    keymap: { Escape: () => pop(), x: () => unqueueCraft() },
+    onKey(k) {
+      const i = +k - 1;
+      if (i >= 0 && i < CRAFTS.length) queueCraft(CRAFTS[i]);
+    },
+    draw(f) {
+      fillBg(x0, y0, w, bh, '#161a10');
+      str(x0 + 1, y0, 'Ω WORKSHOP — press 1-2 to order', '#e8c860', '#161a10');
+      str(x0 + 1, y0 + 1, queueStr().slice(0, w - 2), '#c08a50', '#161a10');
+      drawWidgets(this, f);
+      str(x0 + 1, y0 + bh - 1, 'workers craft in queue order · Esc close', '#8a94a2', '#161a10');
+      drawNotice();
+    },
+  };
+  return scr;
+}
+
 function makeTradeModal() {
   const x0 = 4, y0 = 4, w = 40;
   const scr = {
@@ -690,8 +790,8 @@ function makeTradeModal() {
     },
     draw(f) {
       fillBg(x0, y0, w, TRADE.length + 4, '#141a24');
-      str(x0 + 1, y0, '¤ TRADER — press 1-7 to deal', '#ffd860', '#141a24');
-      str(x0 + 1, y0 + 1, `your coin: ${G.res.coin}`, '#d8c860', '#141a24');
+      str(x0 + 1, y0, `¤ TRADER — press 1-${TRADE.length} to deal`, '#ffd860', '#141a24');
+      str(x0 + 1, y0 + 1, `your coin: ${G.res.coin}${isWinter() ? '   ❄ food is dear in winter' : ''}`, '#d8c860', '#141a24');
       drawWidgets(this, f);
       str(x0 + 1, y0 + TRADE.length + 2, hasPerk('friends') ? 'Trader Friends: prices improved' : 'Esc to close', '#8a94a2', '#141a24');
       drawNotice();
@@ -730,26 +830,36 @@ function makeHelpModal() {
     ['parties into the world. When the commune falls, its story becomes', '#b8b2a0'],
     ['legacy — spend it on permanent perks for the next run.', '#b8b2a0'],
     ['', ''],
-    ['b       build menu · walls, farms, beds, traps, workshop, kitchen', '#c8c2b0'],
-    ['t/m/g   chop trees ♠ / mine rocks ▲ / forage herb bushes "', '#c8c2b0'],
+    ['b       build menu · tabs (←→): HOMES FOOD DEFENSE WORKS', '#c8c2b0'],
+    ['t/m/g   chop trees ♠ / mine rocks ▲ / forage bushes " + fish ≈', '#c8c2b0'],
     ['x       cancel plans or demolish structures', '#c8c2b0'],
-    ['w       world map — send quest parties out', '#c8c2b0'],
+    ['w       world map — scout (1 settler) or raid (a party)', '#c8c2b0'],
     ['e       trade with the visiting caravan (every few days)', '#c8c2b0'],
     ['space   pause · 1/2/3 game speed · Esc close menus', '#c8c2b0'],
     ['v       toggle graphics: pixel tiles / classic ASCII', '#c8c2b0'],
-    ['pan     trackpad/wheel · shift+arrows · middle-drag ·', '#c8c2b0'],
-    ['        click the minimap (n toggles it)', '#c8c2b0'],
+    ['pan     trackpad/wheel · shift+arrows · middle-drag · minimap (n)', '#c8c2b0'],
     ['Q       save & quit to the main menu (progress kept)', '#c8c2b0'],
     ['click a settler name in the sidebar to change role', '#c8c2b0'],
+    ['click a workshop on the map to order spears and medkits', '#c8c2b0'],
     ['', ''],
     ['Controller: stick/d-pad cursor · A act · B back · X build', '#8a94a2'],
     ['Y world · LB/RB cycle tool · LT/RT speed · Start pause', '#8a94a2'],
     ['', ''],
-    ['Economy: crops → kitchen meals (more filling) · herbs → medkits', '#8a94a2'],
-    ['at the workshop · scrap + wood → spears · coin buys anything.', '#8a94a2'],
-    ['Growth: 6 settlers unlock tier II (workshop, kitchen, watch post),', '#8a94a2'],
-    ['9 unlock tier III (stone walls). Guards near a watch post shoot', '#8a94a2'],
-    ['arrows at raiders. Clearing bandit camps delays the next raid.', '#8a94a2'],
+    ['Seasons: 5 days each. In WINTER crops stop and bushes sleep —', '#a8c8e8'],
+    ['stockpile in autumn, fish the river, or starve. Morale sinks with', '#a8c8e8'],
+    ['deaths and hunger: broken communes bleed deserters.', '#a8c8e8'],
+    ['', ''],
+    ['Raiders: brutes Ø smash walls · skirmishers § slip open gaps and', '#e0a080'],
+    ['steal · torch-bearers ¡ burn wood (stone won’t). Every 12th day a', '#e0a080'],
+    ['HORDE marches behind a warlord ☠ — fell him and they break.', '#e0a080'],
+    ['Fallen settlers may be DOWN, not dead: guard them, they crawl home.', '#e0a080'],
+    ['', ''],
+    ['Homes: settlers sleep INSIDE houses — tents ∩ hold 2, cabins Λ 3,', '#8a94a2'],
+    ['longhouses Π 5 (better rest each). No roof = sleeping rough. New', '#8a94a2'],
+    ['folk only join when the houses have room. Economy: crops → kitchen', '#8a94a2'],
+    ['meals · herbs → medkits · 6 settlers = tier II, 9 = tier III.', '#8a94a2'],
+    ['Clearing bandit camps quiets raids; camps left standing grow', '#8a94a2'],
+    ['bolder. At tier III, raise the Beacon and hold 3 days to win.', '#8a94a2'],
     ['', ''],
     ['press ? or Esc to close', '#e8c860'],
   ];
@@ -773,15 +883,34 @@ export function makeGameOverModal() {
     id: 'gameover', modal: true, pausesSim: true,
     keymap: { r: toCiv, R: toCiv, Enter: toCiv, m: toMenu, M: toMenu, Escape: toMenu },
     draw() {
-      const bw = 48, bh = 11;
+      const win = G.victory;
+      const feats = G.bonusLines || [];
+      const bw = 48, bh = 11 + Math.min(6, feats.length ? feats.length + 1 : 0);
+      const bg = win ? '#14120a' : '#1a0e0e';
       const x0 = ((GRID_W - bw) / 2) | 0, y0 = ((GRID_H - bh) / 2) | 0;
-      fillBg(x0, y0, bw, bh, '#1a0e0e');
-      str(x0 + 2, y0 + 1, 'THE COMMUNE HAS FALLEN', '#ff5040', '#1a0e0e');
-      str(x0 + 2, y0 + 3, `You survived ${G.day} day${G.day === 1 ? '' : 's'}.`, '#c8c2b0', '#1a0e0e');
+      fillBg(x0, y0, bw, bh, bg);
+      let y = y0 + 1;
+      if (win) {
+        str(x0 + 2, y, '☼ THE BEACON HELD — VICTORY', '#ffe060', bg);
+        y += 2;
+        str(x0 + 2, y++, `Your people pass into legend after ${G.day} days.`, '#c8c2b0', bg);
+      } else {
+        str(x0 + 2, y, 'THE COMMUNE HAS FALLEN', '#ff5040', bg);
+        y += 2;
+        str(x0 + 2, y++, `You survived ${G.day} day${G.day === 1 ? '' : 's'}.`, '#c8c2b0', bg);
+      }
       const st = G.stats;
-      str(x0 + 2, y0 + 4, `${st.raids} raids repelled · ${st.sites} sites cleared · ${st.kills} kills`, '#8a94a2', '#1a0e0e');
-      str(x0 + 2, y0 + 6, `◆${G.legacyEarned} legacy earned (total ◆${META.points})`, '#c8a0e8', '#1a0e0e');
-      str(x0 + 2, y0 + 8, '[R] rise again    [M] main menu', '#e8c860', '#1a0e0e');
+      str(x0 + 2, y++, `${st.raids} raids repelled · ${st.sites} sites cleared · ${st.kills} kills`, '#8a94a2', bg);
+      if (feats.length) {
+        y++;
+        for (const [label, pts] of feats.slice(0, 5)) {
+          str(x0 + 2, y++, `◆${pts}  ${label}`, '#e8d8a0', bg);
+        }
+      }
+      y++;
+      str(x0 + 2, y, `◆${G.legacyEarned} legacy earned (total ◆${META.points})`, '#c8a0e8', bg);
+      y += 2;
+      str(x0 + 2, y, '[R] rise again    [M] main menu', '#e8c860', bg);
     },
   };
 }

@@ -1,6 +1,6 @@
 // Tile-graphics mode: procedurally drawn pixel-art sprites, no external assets.
 // Sprites are pre-rendered onto small offscreen canvases and blitted per cell.
-import { G, tileAt, inMap, isNight } from './game.js';
+import { G, tileAt, inMap, isNight, isWinter, insideHouse } from './game.js';
 import { VIEW_W, VIEW_H, CELL_W as CW, CELL_H as CH } from './data.js';
 
 // ---------------------------------------------------------------- atlas
@@ -85,15 +85,6 @@ function rock() {
     g.beginPath(); g.moveTo(3, 15); g.lineTo(4.5, 9); g.lineTo(6, 11); g.lineTo(6.5, 15); g.closePath(); g.fill();
   });
 }
-function floorTile() {
-  return mk(g => {
-    g.fillStyle = '#5b4530'; g.fillRect(0, 0, CW, CH);
-    g.fillStyle = '#48361f';
-    for (let y = 0; y < CH; y += 4) g.fillRect(0, y, CW, 1);
-    g.fillStyle = '#6e553c';
-    g.fillRect(2, 2, 1, 1); g.fillRect(7, 10, 1, 1); g.fillRect(4, 14, 1, 1);
-  });
-}
 function palisade() {
   return mk(g => {
     g.fillStyle = '#6b4d2c'; g.fillRect(0, 0, CW, CH);
@@ -160,6 +151,43 @@ function bed() {
     g.fillStyle = '#6a2c2c'; g.fillRect(2, 8, 7, 1);
   });
 }
+function tentSprite() {
+  return mk(g => {
+    g.fillStyle = 'rgba(0,0,0,0.25)';
+    g.beginPath(); g.ellipse(5.5, 16.6, 4.6, 1.2, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#8a7450'; tri(g, 5.5, 5, 10.5, 16, 0.5, 16);
+    g.fillStyle = '#a98f63'; tri(g, 5.5, 5.5, 8.5, 16, 2.5, 16);
+    g.fillStyle = '#2a2018'; tri(g, 5.5, 9, 7.2, 16, 3.8, 16);
+    g.fillStyle = '#6a5638'; g.fillRect(5, 3, 1, 3);
+  });
+}
+function cabinSprite() {
+  return mk(g => {
+    g.fillStyle = 'rgba(0,0,0,0.25)';
+    g.beginPath(); g.ellipse(5.5, 16.8, 4.8, 1.1, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#5b4028'; g.fillRect(1, 9, 9, 8);
+    g.fillStyle = '#4a3520';
+    for (let y = 10; y <= 16; y += 2) g.fillRect(1, y, 9, 1);
+    g.fillStyle = '#7a5a34'; tri(g, 5.5, 2.5, 11, 9.5, 0, 9.5);
+    g.fillStyle = '#8f6c42'; tri(g, 5.5, 3.5, 9, 8.5, 2, 8.5);
+    g.fillStyle = '#2a2018'; g.fillRect(4.5, 12, 2, 5);
+    g.fillStyle = '#ffd860'; g.fillRect(7.5, 11, 1.5, 1.5);
+  });
+}
+function longhouseSprite() {
+  return mk(g => {
+    g.fillStyle = 'rgba(0,0,0,0.28)';
+    g.beginPath(); g.ellipse(5.5, 17, 5.2, 1.1, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#5b4028'; g.fillRect(0.5, 10, 10, 7);
+    g.fillStyle = '#4a3520';
+    for (let y = 11; y <= 16; y += 2) g.fillRect(0.5, y, 10, 1);
+    g.fillStyle = '#6f5330';
+    g.beginPath(); g.moveTo(0, 10); g.lineTo(3, 4); g.lineTo(8, 4); g.lineTo(11, 10); g.closePath(); g.fill();
+    g.fillStyle = '#7f5e38'; g.fillRect(3, 4, 5, 1);
+    g.fillStyle = '#2a2018'; g.fillRect(4.5, 12, 2, 5);
+    g.fillStyle = '#ffd860'; g.fillRect(2, 12, 1.5, 1.5); g.fillRect(8, 12, 1.5, 1.5);
+  });
+}
 function campfire(frame) {
   return mk(g => {
     g.fillStyle = '#6a6a64';
@@ -218,7 +246,39 @@ function tri(g, x1, y1, x2, y2, x3, y3) {
   g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x3, y3); g.closePath(); g.fill();
 }
 
-function person({ shirt, shirtDark, hood = null, pack = false, weapon = false, lying = false, skin = '#e8c09a', hair = '#3a2a1a' }) {
+// small free-standing flame, overlaid on burning tiles
+function flame(frame) {
+  return mk(g => {
+    const h = [8, 11, 9][frame];
+    g.fillStyle = 'rgba(224,96,32,0.85)';
+    tri(g, 3, 17 - h, 5.5, 17, 0.5, 17);
+    tri(g, 8, 15 - h * 0.8, 10.5, 17, 5.5, 17);
+    g.fillStyle = 'rgba(255,144,48,0.9)';
+    tri(g, 3, 18.5 - h * 0.7, 4.8, 17, 1.2, 17);
+    tri(g, 8, 17 - h * 0.55, 9.8, 17, 6.2, 17);
+    g.fillStyle = '#ffd860';
+    tri(g, 3 + frame * 0.5, 17 - h * 0.35, 4.2, 17, 1.8, 17);
+  });
+}
+
+// the Beacon: a tall stone-footed pyre, roaring when lit
+function beaconSprite(frame) {
+  return mk(g => {
+    g.fillStyle = '#54544f';
+    g.fillRect(1, 15, 9, 2);
+    g.fillStyle = '#6f6f6a';
+    g.fillRect(2, 13, 7, 2);
+    g.fillStyle = '#4a3520';
+    g.fillRect(4, 6, 3, 8);
+    g.fillRect(2, 9, 7, 2);
+    const h = [11, 14, 12][frame];
+    g.fillStyle = '#e06020'; tri(g, 5.5, 13 - h, 9, 12, 2, 12);
+    g.fillStyle = '#ff9030'; tri(g, 5.5, 14 - h * 0.75, 8, 12, 3, 12);
+    g.fillStyle = '#ffd860'; tri(g, 5.5 + (frame - 1) * 0.6, 14 - h * 0.45, 7, 12, 4, 12);
+  });
+}
+
+function person({ shirt, shirtDark, hood = null, pack = false, weapon = false, torch = false, crest = false, lying = false, skin = '#e8c09a', hair = '#3a2a1a' }) {
   return mk(g => {
     if (lying) { g.translate(5.5, 9.5); g.rotate(Math.PI / 2); g.translate(-5.5, -9.5); }
     // shadow
@@ -229,6 +289,7 @@ function person({ shirt, shirtDark, hood = null, pack = false, weapon = false, l
     g.fillStyle = skin; g.fillRect(4, 3, 3, 3);
     g.fillStyle = hood || hair; g.fillRect(4, 2, 3, hood ? 2 : 1);
     if (hood) { g.fillStyle = hood; g.fillRect(3, 3, 1, 2); g.fillRect(7, 3, 1, 2); }
+    if (crest) { g.fillStyle = '#e8c040'; g.fillRect(4, 1, 3, 1); }
     // body + arms
     g.fillStyle = shirt; g.fillRect(3, 6, 5, 5);
     g.fillStyle = shirtDark; g.fillRect(2, 6, 1, 4); g.fillRect(8, 6, 1, 4);
@@ -236,6 +297,11 @@ function person({ shirt, shirtDark, hood = null, pack = false, weapon = false, l
     g.fillStyle = '#2e2a28'; g.fillRect(3, 11, 2, 4); g.fillRect(6, 11, 2, 4);
     g.fillStyle = '#1c1816'; g.fillRect(3, 15, 2, 1); g.fillRect(6, 15, 2, 1);
     if (weapon) { g.fillStyle = '#b0b6bd'; g.fillRect(9, 2, 1, 9); g.fillStyle = '#8a9298'; g.fillRect(9, 1, 1, 1); }
+    if (torch) {
+      g.fillStyle = '#6a4a24'; g.fillRect(9, 4, 1, 7);
+      g.fillStyle = '#ff9030'; g.fillRect(8.5, 2, 2, 2);
+      g.fillStyle = '#ffd860'; g.fillRect(9, 1, 1, 1);
+    }
   });
 }
 
@@ -247,18 +313,22 @@ function buildAtlas() {
     tree: [treeRound(), treePine()],
     bush: bush(),
     rock: rock(),
-    floor: floorTile(),
     wall_w: palisade(),
     wall_s: stoneWall(),
     door: door(),
     soil: soil(),
     crops: [cropStage(0), cropStage(1), cropStage(2), cropStage(3)],
     bed: bed(),
+    tent: tentSprite(),
+    cabin: cabinSprite(),
+    longhouse: longhouseSprite(),
     campfire: [campfire(0), campfire(1), campfire(2)],
     post: post(),
     trap: trap(),
     workshop: workshop(),
     kitchen: kitchen(),
+    beacon: [beaconSprite(0), beaconSprite(1), beaconSprite(2)],
+    flame: [flame(0), flame(1), flame(2)],
     settler: {
       worker: person({ shirt: '#b8a878', shirtDark: '#98885c' }),
       farmer: person({ shirt: '#4f8a35', shirtDark: '#3d6c28' }),
@@ -269,18 +339,25 @@ function buildAtlas() {
       farmer: person({ shirt: '#4f8a35', shirtDark: '#3d6c28', lying: true }),
       guard: person({ shirt: '#3a7ea0', shirtDark: '#2c6280', lying: true }),
     },
-    raider: person({ shirt: '#7a2828', shirtDark: '#5c1e1e', hood: '#601c1c', weapon: true, skin: '#d8b090' }),
+    raiders: {
+      raider: person({ shirt: '#7a2828', shirtDark: '#5c1e1e', hood: '#601c1c', weapon: true, skin: '#d8b090' }),
+      brute: person({ shirt: '#8a5a28', shirtDark: '#6a441e', hood: '#5a3a16', weapon: true, skin: '#d8b090' }),
+      skirmisher: person({ shirt: '#7a4a7a', shirtDark: '#5c375c', hood: '#4a2c4a', pack: true, skin: '#d8b090' }),
+      torcher: person({ shirt: '#6a2828', shirtDark: '#4c1e1e', hood: '#3c1616', torch: true, skin: '#d8b090' }),
+      warlord: person({ shirt: '#4a1a1a', shirtDark: '#331111', hood: '#181214', weapon: true, crest: true, skin: '#d8b090' }),
+    },
     trader: person({ shirt: '#c8a040', shirtDark: '#a88430', pack: true }),
   };
   return a;
 }
 
 // which sprite covers the whole cell (no ground underneath needed)
-const FULL = new Set(['water', 'floor', 'wall_w', 'wall_s', 'door']);
+const FULL = new Set(['water', 'wall_w', 'wall_s', 'door']);
 // ground drawn underneath partial sprites
 const UNDER = {
   tree: 'grass', bush: 'grass', rock: 'grass',
-  campfire: 'dirt', trap: 'dirt', workshop: 'dirt', kitchen: 'dirt', post: 'dirt', bed: 'dirt',
+  campfire: 'dirt', trap: 'dirt', workshop: 'dirt', kitchen: 'dirt', post: 'dirt', bed: 'dirt', beacon: 'dirt',
+  tent: 'dirt', cabin: 'dirt', longhouse: 'dirt',
 };
 
 function sprite(a, t, x, y, f) {
@@ -289,12 +366,15 @@ function sprite(a, t, x, y, f) {
     case 'tree': return a.tree[(x * 7 + y * 11) % 3 === 0 ? 1 : 0];
     case 'bush': return a.bush;
     case 'rock': return a.rock;
-    case 'floor': return a.floor;
     case 'wall_w': return a.wall_w;
     case 'wall_s': return a.wall_s;
     case 'door': return a.door;
     case 'bed': return a.bed;
+    case 'tent': return a.tent;
+    case 'cabin': return a.cabin;
+    case 'longhouse': return a.longhouse;
     case 'campfire': return a.campfire[(f >> 2) % 3];
+    case 'beacon': return a.beacon[(f >> 2) % 3];
     case 'post': return a.post;
     case 'trap': return a.trap;
     case 'workshop': return a.workshop;
@@ -348,35 +428,52 @@ export function drawMapTiles(ctx, f) {
       }
       // designation highlight
       if (tl.desig) {
-        ctx.fillStyle = 'rgba(232,200,96,0.26)';
+        ctx.fillStyle = tl.desig === 'fish' ? 'rgba(120,200,232,0.3)' : 'rgba(232,200,96,0.26)';
         ctx.fillRect(px, py, CW, CH);
       }
+      // fire overlay
+      if (tl.burning) {
+        ctx.fillStyle = 'rgba(255,120,32,0.18)';
+        ctx.fillRect(px, py, CW, CH);
+        ctx.drawImage(A.flame[((x * 3 + y) + (f >> 2)) % 3], px, py);
+      }
     }
+  }
+
+  // winter lies over the land like a sheet
+  if (isWinter()) {
+    ctx.fillStyle = 'rgba(198,214,232,0.16)';
+    ctx.fillRect(0, 0, VIEW_W * CW, VIEW_H * CH);
   }
 
   // entities (world → screen offset; skip anything off-camera)
   const blit = (img, x, y) => { if (onScreen(x, y)) ctx.drawImage(img, (x - cam.x) * CW, (y - cam.y) * CH); };
   if (G.trader) blit(A.trader, G.trader.x, G.trader.y);
-  for (const r of G.raiders) blit(A.raider, r.x, r.y);
+  for (const r of G.raiders) blit(A.raiders[r.type] || A.raiders.raider, r.x, r.y);
   for (const s of G.settlers) {
-    if (s.away || !onScreen(s.x, s.y)) continue;
-    const set = s.sleeping ? A.sleeper : A.settler;
+    if (s.away || insideHouse(s) || !onScreen(s.x, s.y)) continue; // house sleepers are indoors
+    const set = (s.sleeping || s.downed) ? A.sleeper : A.settler;
     ctx.drawImage(set[s.role] || set.worker, (s.x - cam.x) * CW, (s.y - cam.y) * CH);
-    if (s.starving && (f >> 3) % 2) {
+    if (s.downed) {
+      ctx.fillStyle = 'rgba(192,64,48,0.32)';
+      ctx.fillRect((s.x - cam.x) * CW, (s.y - cam.y) * CH, CW, CH);
+    } else if (s.starving && (f >> 3) % 2) {
       ctx.fillStyle = 'rgba(224,80,64,0.3)';
       ctx.fillRect((s.x - cam.x) * CW, (s.y - cam.y) * CH, CW, CH);
     }
   }
 
-  // night: darken, then warm glow around visible fires
+  // night: darken, then warm glow around visible fires (hearths and hazards)
   if (isNight()) {
     ctx.fillStyle = 'rgba(8,12,38,0.45)';
     ctx.fillRect(0, 0, VIEW_W * CW, VIEW_H * CH);
     ctx.globalCompositeOperation = 'lighter';
     for (let sy = 0; sy < VIEW_H; sy++) for (let sx = 0; sx < VIEW_W; sx++) {
-      if (tileAt(cam.x + sx, cam.y + sy).t !== 'campfire') continue;
+      const tl = tileAt(cam.x + sx, cam.y + sy);
+      const lit = tl.t === 'campfire' || tl.t === 'beacon' || tl.burning;
+      if (!lit) continue;
       const cx = sx * CW + CW / 2, cy = sy * CH + CH / 2;
-      const rad = CW * 5;
+      const rad = CW * (tl.t === 'beacon' ? 9 : 5);
       const grad = ctx.createRadialGradient(cx, cy, 2, cx, cy, rad);
       grad.addColorStop(0, 'rgba(255,150,50,0.22)');
       grad.addColorStop(1, 'rgba(255,150,50,0)');

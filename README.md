@@ -30,26 +30,42 @@ python3 -m http.server 8137 -d hearthfall
 
 Pick a people, run the commune, survive as long as you can. When it falls —
 and it will — the run is scored (days survived, raids repelled, sites
-cleared, kills, peak population) and paid out as **legacy ◆**, spent on
-permanent perks that make every future run start stronger. Runs autosave at
-dawn; death deletes the save. That's the deal.
+cleared, kills, peak population, plus named feats: winters endured, hordes
+broken, warlords slain) and paid out as **legacy ◆**, spent on permanent
+perks that make every future run start stronger. Runs autosave at dawn;
+death deletes the save. That's the deal. Or: reach tier III, raise **the
+Beacon**, and hold for 3 days against everything it attracts — the only
+way a run ends in victory.
 
-**Civs** (chosen at New Game): the Tillers (faster crops, extra farmer),
-the Wardens (harder-hitting guards, extra guard), the Ratcatchers (faster,
-stronger expeditions, starting coin), the Masons (faster construction,
-tougher walls, starting stone).
+**Seasons** turn every 5 days. In winter crops stop, bushes sleep, and
+hunger bites harder — stockpile in autumn, fish the river (`g` on water),
+or buy dear from the trader. **Morale** rises with victories and hot meals,
+falls with deaths, theft and rough sleeping; a breaking commune bleeds
+deserters into the night.
 
-**Legacy perks** (8): starting stockpiles, permanent crop/wall bonuses,
-trader discounts, extra starting settler, pre-scouted world sites.
+**Settlers** each carry a trait — brave, craven, glutton, keen-eye, night
+owl and more — that bends how they work and fight. Settlers felled in
+battle have an even chance to go down wounded instead of dying: helpless
+where they fall, crawling for shelter, one blow from the end.
+
+**Civs**: the Tillers (faster crops, extra farmer), the Wardens
+(harder-hitting guards, extra guard), the Ratcatchers (faster, stronger
+expeditions — unlocked by clearing sites), the Masons (faster construction,
+tougher walls — unlocked by repelling raids).
+
+**Legacy perks** (10, some tiered): starting stockpiles, permanent
+crop/wall bonuses, trader discounts, extra starting settler, pre-scouted
+world sites, stouter morale, +25% legacy income.
 
 ## How to play
 
 | Key | Action |
 | --- | --- |
-| `b` | build menu — walls, doors, farms, beds, traps, watch posts, workshop, kitchen, crafting |
-| `t` / `m` / `g` | designate: chop trees ♠ / mine rocks ▲ / forage herb bushes `"` |
+| `b` | build menu, tabbed (`←`/`→`): **HOMES** tents/cabins/longhouses · **FOOD** farms, campfire, kitchen · **DEFENSE** walls, door, traps, watch post · **WORKS** workshop, the Beacon |
+| click a workshop | production orders — queue spears and medkits, cancel for a refund |
+| `t` / `m` / `g` | designate: chop trees ♠ / mine rocks ▲ / forage bushes `"` and fish water ≈ |
 | `x` | cancel plans / demolish |
-| `w` | world map — pick a site, pick a party, launch a quest |
+| `w` | world map — send one settler to scout a site, or a party to take it |
 | `e` | trade with the visiting caravan (arrives every few days) |
 | `space` | pause · `1/2/3` game speed · `?` help · `Esc` close menus |
 | `v` | toggle graphics: pixel tiles / classic ASCII |
@@ -62,21 +78,35 @@ navigates every menu · A confirm/act (hold to drag-paint) · B back ·
 X build menu · Y world map · LB/RB cycle tools · LT/RT game speed ·
 Start pause · Back help · R3 graphics toggle.
 
-**Roles.** Workers build/chop/mine/craft, farmers farm/cook/forage, guards
-only fight. Settlers handle eating and sleeping themselves.
+**Roles.** Workers build/chop/mine/craft, farmers farm/cook/forage/fish,
+guards only fight. Settlers handle eating, sleeping and firefighting
+themselves.
 
-**Economy.** Crops → raw food → kitchen **meals** (more filling). Herb
-bushes → **herbs** → medkits at the workshop. Wood + scrap → spears. The
-trader converts surplus into **coin** and coin into anything else.
+**Economy.** Crops → raw food → kitchen **meals** (more filling). The
+workshop takes production orders — click it to queue **spears** (wood +
+scrap) and **medkits** (herbs). The trader converts surplus into **coin**
+and coin into anything else (food runs dear in winter). Fishing spots
+yield a steady trickle and rest between catches.
 
-**Progression.** 6 settlers unlock tier II (watch post, workshop, kitchen);
-9 unlock tier III (stone walls). Guards within reach of a watch post shoot
-arrows at raiders instead of chasing them.
+**Homes.** Settlers sleep *inside* houses: tents ∩ sleep 2, cabins Λ
+sleep 3 (tier II), longhouses Π sleep 5 (tier III, best rest). No roof
+means sleeping rough — slow recovery and sinking morale. Houses are wood;
+torch-bearers love them.
 
-**Raids** come at dusk every few days, scaling with survival time. Raiders
-bash through walls and doors — layer palisades, funnel them through spike
-traps, garrison the towers. Clearing a bandit camp on the world map delays
-the next raid.
+**Progression.** 6 settlers unlock tier II (watch post, workshop, kitchen,
+cabins); 9 unlock tier III (stone walls, longhouses, the Beacon).
+Wanderers only join if there is food on the fire *and* room in the
+houses. Guards within reach of a watch post shoot arrows at raiders
+instead of chasing them.
+
+**Raids** come at dusk every few days, scaling with survival time — and
+past day 14 they may hit from two sides at once. Plain raiders ☻ chase your
+people; **brutes** Ø smash walls; **skirmishers** § slip through open gaps
+to rob your stockpile; **torch-bearers** ¡ set wooden structures alight
+(stone doesn't burn — settlers douse fires once the fighting stops). Every
+12th day a **horde** marches behind a named **warlord** ☠ — kill him and
+the rest break. Clearing a bandit camp on the world map delays the next
+raid; a camp left standing grows bolder and feeds bigger raids.
 
 ## Code map
 
