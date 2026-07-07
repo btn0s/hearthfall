@@ -1,7 +1,7 @@
 // World-layer drawing strategies for the game screen: the classic ASCII
 // cell renderer (sprite mode lives in tiles.js) plus shared map UI helpers.
-import { G, tileAt, inMap, isNight, isWinter, buildDef, traitName, insideHouse, selBounds } from './game.js';
-import { MAP_W, MAP_H, VIEW_W, VIEW_H, T, ROLE_COLORS, RAIDER_TYPES, HOUSES } from './data.js';
+import { G, tileAt, inMap, isNight, isWinter, buildDef, traitName, insideHouse, selBounds, structMax } from './game.js';
+import { MAP_W, MAP_H, VIEW_W, VIEW_H, T, ROLE_COLORS, RAIDER_TYPES, HOUSES, STRUCT_HP } from './data.js';
 import { put, dim, setCellBg } from './gfx.js';
 
 // snowy recolors for living terrain
@@ -33,6 +33,8 @@ export function drawWorldAscii(f) {
       else { ch = '.'; fg = '#5a7a3a'; }
       if (winter) fg = '#7a8690';
     }
+    let tint = tf;
+    if (STRUCT_HP[tl.t] && tl.hp !== undefined && tl.hp < structMax(tl.t) * 0.5) tint *= 0.55; // battle scars show
     if (tl.build) { ch = T[tl.build.id] ? T[tl.build.id].ch : '?'; fg = '#565664'; }
     if (tl.desig) fg = '#e8c860';
     if (tl.burning) { // flames read at full brightness, day or night
@@ -40,7 +42,7 @@ export function drawWorldAscii(f) {
       put(sx, sy, fch, ['#ff9030', '#ffc040', '#e06020'][(x + (f >> 2)) % 3], '#2a1206');
       continue;
     }
-    put(sx, sy, ch, dim(fg, tf), dim(bg, tf));
+    put(sx, sy, ch, dim(fg, tint), dim(bg, tf));
   }
   const onScreen = (x, y) => x >= cam.x && y >= cam.y && x < cam.x + VIEW_W && y < cam.y + VIEW_H;
   if (G.trader && onScreen(G.trader.x, G.trader.y)) put(G.trader.x - cam.x, G.trader.y - cam.y, '☺', '#ffd860');

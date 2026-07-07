@@ -1,7 +1,7 @@
 // Tile-graphics mode: procedurally drawn pixel-art sprites, no external assets.
 // Sprites are pre-rendered onto small offscreen canvases and blitted per cell.
-import { G, tileAt, inMap, isNight, isWinter, insideHouse, selBounds } from './game.js';
-import { VIEW_W, VIEW_H, CELL_W as CW, CELL_H as CH } from './data.js';
+import { G, tileAt, inMap, isNight, isWinter, insideHouse, selBounds, structMax } from './game.js';
+import { VIEW_W, VIEW_H, CELL_W as CW, CELL_H as CH, STRUCT_HP } from './data.js';
 
 // ---------------------------------------------------------------- atlas
 let A = null; // built lazily on first draw
@@ -246,6 +246,18 @@ function tri(g, x1, y1, x2, y2, x3, y3) {
   g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.lineTo(x3, y3); g.closePath(); g.fill();
 }
 
+// jagged dark crack, overlaid on badly damaged structures
+function crack() {
+  return mk(g => {
+    g.strokeStyle = 'rgba(10,8,6,0.8)';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(2, 2); g.lineTo(5, 7); g.lineTo(3.5, 11); g.lineTo(6.5, 16);
+    g.moveTo(5, 7); g.lineTo(8, 9);
+    g.stroke();
+  });
+}
+
 // small free-standing flame, overlaid on burning tiles
 function flame(frame) {
   return mk(g => {
@@ -329,6 +341,7 @@ function buildAtlas() {
     kitchen: kitchen(),
     beacon: [beaconSprite(0), beaconSprite(1), beaconSprite(2)],
     flame: [flame(0), flame(1), flame(2)],
+    crack: crack(),
     settler: {
       worker: person({ shirt: '#b8a878', shirtDark: '#98885c' }),
       farmer: person({ shirt: '#4f8a35', shirtDark: '#3d6c28' }),
@@ -410,6 +423,7 @@ export function drawMapTiles(ctx, f) {
       // feature layer
       const sp = sprite(A, t, x, y, f);
       if (sp) ctx.drawImage(sp, px, py);
+      if (STRUCT_HP[t] && tl.hp !== undefined && tl.hp < structMax(t) * 0.5) ctx.drawImage(A.crack, px, py);
       if (t === 'farm') {
         const g = tl.growth || 0;
         const stage = g >= 100 ? 3 : g >= 60 ? 2 : g >= 25 ? 1 : 0;

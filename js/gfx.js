@@ -13,7 +13,8 @@ const fgs = new Array(N).fill('#888');
 const bgs = new Array(N).fill(DEFAULT_BG);
 
 let canvas = null, ctx = null;
-let worldPainter = null; // (ctx, f) => void, drawn under the buffer each frame
+let worldPainter = null;   // (ctx, f) => void, drawn under the buffer each frame
+let overlayPainter = null; // (ctx, f) => void, drawn over the buffer (UI portraits etc.)
 
 // persisted display settings
 export const GFX = { mode: (() => { try { return localStorage.getItem('hearthfall.gfx') || 'tiles'; } catch (e) { return 'tiles'; } })() };
@@ -85,9 +86,11 @@ export function dim(hex, k) {
 export function clear() {
   for (let i = 0; i < N; i++) { chs[i] = ' '; fgs[i] = '#888'; bgs[i] = DEFAULT_BG; }
   worldPainter = null;
+  overlayPainter = null;
 }
 
 export function setWorldPainter(fn) { worldPainter = fn; }
+export function setOverlayPainter(fn) { overlayPainter = fn; }
 
 export function paint(f) {
   if (!ctx) return;
@@ -110,4 +113,5 @@ export function paint(f) {
       }
     }
   }
+  if (overlayPainter) overlayPainter(ctx, f);
 }

@@ -4,6 +4,7 @@ import { rint, choice, chance } from './rng.js';
 import {
   MAP_W, MAP_H, VIEW_W, VIEW_H, T, BUILDS, NAMES, ROLE_ORDER, CIVS, TRADE, OBJECTIVES, TIPS,
   TRAITS, RAIDER_TYPES, WARLORD_NAMES, SEASONS, SEASON_LEN, FLAMMABLE, HOUSES, CRAFTS,
+  STRUCT_HP, ELDERS, ELDER_IDLE,
 } from './data.js';
 import { genMap } from './map.js';
 import { hasPerk, perkLevel, endRun, addPoints } from './meta.js';
@@ -21,7 +22,8 @@ function makeState() {
     tiles: null, camp: { x: 0, y: 0 },
     res: { food: 25, meals: 0, wood: 40, stone: 12, scrap: 2, herbs: 0, coin: 4, weapons: 1, meds: 1 },
     settlers: [], raiders: [], log: [], notice: null,
-    morale: 65, beaconDay: 0,
+    morale: 65, moraleEvents: [], beaconDay: 0,
+    alarm: false, recruitDays: 2,
     mode: 'NORMAL', buildSel: null, sel: null, cursor: { x: -1, y: -1 }, cam: { x: 0, y: 0 },
     raidNext: 3, raidActive: false, raidTimer: 0, raidIsHorde: false, banditsCleared: 0,
     world: null, expeditions: [],
@@ -51,10 +53,86 @@ export const daysToWinter = () => Math.max(0, SEASON_LEN * 3 - ((G.day - 1) % (S
 export const isHordeDay = (day) => day >= 12 && day % 12 === 0;
 
 // ---------------------------------------------------------------- morale
-export function bumpMorale(n) { G.morale = Math.max(0, Math.min(100, G.morale + n)); }
+// Big swings keep a receipt so the meter can explain itself.
+export function bumpMorale(n, why) {
+  G.morale = Math.max(0, Math.min(100, G.morale + n));
+  if (why && Math.abs(n) >= 3) {
+    G.moraleEvents.push({ day: G.day, why, n });
+    if (G.moraleEvents.length > 6) G.moraleEvents.shift();
+  }
+}
+export function moraleWhy() {
+  const bits = [];
+  const recent = {};
+  for (const e of G.moraleEvents) {
+    if (e.day >= G.day - 3) recent[e.why] = (recent[e.why] || 0) + 1;
+  }
+  for (const [why, c] of Object.entries(recent)) bits.push(c > 1 ? `${c}× ${why}` : why);
+  const starving = G.settlers.filter(s => s.starving).length;
+  if (starving) bits.push(`${starving} starving`);
+  const rough = G.settlers.filter(s => s.sleeping && !insideHouse(s)).length;
+  if (rough) bits.push(`${rough} sleeping rough`);
+  return bits.join(' · ');
+}
 export const moraleLabel = () =>
   G.morale >= 75 ? 'high' : G.morale >= 50 ? 'steady' : G.morale >= 35 ? 'low' : 'BREAKING';
 const moraleWorkMult = () => G.morale >= 75 ? 1.15 : G.morale < 35 ? 0.8 : 1;
+
+// ---------------------------------------------------------------- forecasts
+// The loop only feels fair if dusk and hunger are visible before they land.
+
+// Expected raid size for a given day (same math spawnRaid uses).
+export function raidEstimate(day = G.day) {
+  const horde = isHordeDay(day);
+  const uncleared = G.world ? G.world.locs.filter(l => l.type === 'bandits' && !l.cleared).length : 0;
+  let n = 2 + Math.floor((day - 2) / 3) - Math.floor(G.banditsCleared / 2);
+  if (day >= 8) n += Math.min(3, uncleared);
+  if (isWinter()) n = Math.max(2, n - 2);
+  if (G.beaconDay) n += 2;
+  const cap = day > 20 ? 10 + Math.floor((day - 20) / 4) : 10;
+  n = Math.max(2, Math.min(cap, n));
+  if (horde) n = Math.max(n + 3, 4 + Math.floor(day / 3)) + 1; // +1: the warlord
+  return { n, horde };
+}
+
+// What dusk holds: the sidebar's heartbeat line.
+export function tonightInfo() {
+  if (G.raidActive) {
+    return { label: G.raidIsHorde ? '☠ THE HORDE IS HERE' : '⚠ RAID UNDERWAY', fg: '#ff5040', urgent: true };
+  }
+  const today = G.day >= G.raidNext || isHordeDay(G.day);
+  if (today) {
+    const e = raidEstimate(G.day);
+    return e.horde
+      ? { label: `☠ tonight: HORDE ~${e.n}`, fg: '#ff4060', urgent: true }
+      : { label: `⚠ tonight: raid ~${e.n}`, fg: '#e0a040', urgent: true };
+  }
+  if (G.day + 1 >= G.raidNext || isHordeDay(G.day + 1)) {
+    return { label: '☾ quiet · war-drums tmrw', fg: '#e0c060' };
+  }
+  return { label: `☾ tonight: quiet (~${Math.max(1, G.raidNext - G.day)}d)`, fg: '#8a94a2' };
+}
+
+// Hunger math, surfaced: burn per day, days of stores, what winter will want.
+export function foodInfo() {
+  let burn = 0;
+  for (const s of G.settlers) {
+    if (s.away) continue;
+    burn += 0.075 * (s.trait === 'glutton' ? 1.5 : 1) * (isWinter() ? 1.25 : 1);
+  }
+  const perDay = burn * 1440 / 46; // in raw-food units
+  const stock = G.res.food + G.res.meals * (65 / 46);
+  const winterNeed = Math.ceil(G.settlers.length * 0.075 * 1.25 * 1440 / 46 * SEASON_LEN);
+  return { perDay, days: perDay > 0 ? stock / perDay : 99, stock, winterNeed };
+}
+
+// ---------------------------------------------------------------- structures
+export function structMax(t) {
+  const base = STRUCT_HP[t];
+  if (!base) return 0;
+  return (t === 'wall_w' || t === 'wall_s') ? Math.round(base * G.mods.wallHp) : base;
+}
+export const structDamaged = (tl) => STRUCT_HP[tl.t] && tl.hp !== undefined && tl.hp <= structMax(tl.t) - 15;
 
 export function addLog(text, fg = '#b8b2a0') {
   G.log.push({ text: `[D${G.day} ${timeStr()}] ${text}`, fg });
@@ -239,6 +317,14 @@ export function makeSettler(x, y, role) {
 
 export const traitName = (s) => TRAITS[s.trait] ? TRAITS[s.trait].name : '';
 
+// The alarm bell: civilians run for the fire, guards stand to their posts,
+// until the player (or the dawn) sounds the all-clear.
+export function toggleAlarm() {
+  G.alarm = !G.alarm;
+  if (G.alarm) addLog('♪ The alarm bell rings — everyone to the fire!', '#e0c060');
+  else addLog('The all-clear sounds. Back to work.', '#8ad080');
+}
+
 export function weaponBonus(s) {
   const guards = G.settlers.filter(x => x.role === 'guard');
   const i = guards.indexOf(s);
@@ -351,8 +437,8 @@ function claimBed(s) {
 
 // job priorities per role: lower runs first
 const PRI = {
-  farmer: { harvest: 0, cook: 1, buildFarm: 1, forage: 2, chop: 3, build: 3, mine: 4, craft: 5 },
-  worker: { build: 0, buildFarm: 0, craft: 1, chop: 1, forage: 2, mine: 2, cook: 3, harvest: 3 },
+  farmer: { harvest: 0, cook: 1, buildFarm: 1, forage: 2, chop: 3, build: 3, mine: 4, craft: 5, repair: 4 },
+  worker: { build: 0, buildFarm: 0, craft: 1, chop: 1, forage: 2, mine: 2, cook: 3, harvest: 3, repair: 1 },
 };
 
 function findJob(s) {
@@ -375,6 +461,7 @@ function findJob(s) {
     else if (tl.t === 'farm' && (tl.growth || 0) >= 100) { kind = 'harvest'; work = 8; onTile = true; p = pri.harvest; }
     else if (tl.t === 'kitchen' && G.res.food >= 4 && G.res.meals < pop * 2) { kind = 'cook'; work = 10; p = pri.cook; }
     else if (tl.t === 'workshop' && G.craftQueue.length) { kind = 'craft'; work = 12; p = pri.craft; }
+    else if (structDamaged(tl) && !tl.burning && G.res[tl.t === 'wall_s' ? 'stone' : 'wood'] >= 1) { kind = 'repair'; work = 8; p = pri.repair; }
     if (kind === null) continue;
     const key = p * 10000 + mdist(s.x, s.y, x, y);
     if (key < bestKey) { bestKey = key; best = { kind, x, y, work, onTile, item: null }; }
@@ -398,6 +485,7 @@ function taskValid(t) {
     case 'cook': return tl.t === 'kitchen' && G.res.food >= 2;
     case 'craft': return tl.t === 'workshop' && !!t.item;
     case 'douse': return !!tl.burning;
+    case 'repair': return structDamaged(tl) && !tl.burning && G.res[tl.t === 'wall_s' ? 'stone' : 'wood'] >= 1;
   }
   return false;
 }
@@ -419,6 +507,13 @@ function completeTask(s, t) {
   else if (t.kind === 'forage') { tl.t = 'grass'; delete tl.desig; delete tl.burning; G.res.herbs += 2; }
   else if (t.kind === 'fish') { G.res.food += isWinter() ? rint(1, 2) : rint(2, 4); tl.fishCd = 500; }
   else if (t.kind === 'douse') { delete tl.burning; }
+  else if (t.kind === 'repair') {
+    const mat = tl.t === 'wall_s' ? 'stone' : 'wood';
+    if (G.res[mat] >= 1) {
+      G.res[mat]--;
+      tl.hp = Math.min(structMax(tl.t), tl.hp + (mat === 'stone' ? 25 : 15));
+    }
+  }
   else if (t.kind === 'harvest') { tl.growth = 0; G.res.food += rint(3, 5); }
   else if (t.kind === 'cook') {
     if (G.res.food >= 2) { G.res.food -= 2; G.res.meals += 3; G.stats.mealsCooked += 3; }
@@ -439,7 +534,7 @@ function completeTask(s, t) {
     if (def.id === 'wall_w' || def.id === 'wall_s' || def.id === 'door') G.stats.wallsBuilt++;
     if (def.id === 'beacon') {
       G.beaconDay = G.day;
-      bumpMorale(20);
+      bumpMorale(20, 'the Beacon lit');
       G.raidNext = Math.min(G.raidNext, G.day + 1);
       addLog('☼ THE BEACON IS LIT! Every eye for miles turns this way.', '#ffe060');
       addLog('Hold the commune for 3 days and your story ends in triumph.', '#ffe060');
@@ -499,7 +594,7 @@ function hitRaider(r, dmg, s) {
       G.res.coin += coin; G.res.weapons++;
       addLog(`☠ ${r.name} has fallen to ${s.name}! Spoils: ${coin} coin, a weapon.`, '#ffd860');
       addLog('The horde breaks and runs!', '#8ad080');
-      bumpMorale(15);
+      bumpMorale(15, 'warlord slain');
       for (const x of G.raiders) x.fleeing = true;
     } else {
       addLog(`${s.name} slew a ${RAIDER_TYPES[r.type] ? RAIDER_TYPES[r.type].name : 'raider'}!`, '#8ad080');
@@ -509,7 +604,7 @@ function hitRaider(r, dmg, s) {
 
 function killSettler(s, how) {
   addLog(`☠ ${s.name} ${how}.`, '#e05040');
-  bumpMorale(hasPerk('stouthearts') ? -8 : -15);
+  bumpMorale(hasPerk('stouthearts') ? -8 : -15, 'a death');
   releaseTask(s); clearBed(s);
   G.settlers = G.settlers.filter(x => x !== s);
   if (!G.settlers.length) communeFallen();
@@ -600,7 +695,7 @@ function updateSettler(s) {
     return;
   }
 
-  if (G.raidActive) {
+  if (G.raidActive || G.alarm) {
     if (s.role === 'guard') {
       // guards garrisoned near a watch post loose arrows instead of chasing
       const post = nearestPost(s);
@@ -619,6 +714,11 @@ function updateSettler(s) {
       }
       const r = nearestRaider(s);
       if (r) { moveToward(s, r.x, r.y, { adjacent: true, refresh: 5 }); return; }
+      if (G.alarm) { // bell rung, no foe yet: stand ready at the post
+        const anchor = post || G.camp;
+        if (mdist(s.x, s.y, anchor.x, anchor.y) > 2) moveToward(s, anchor.x, anchor.y, { adjacent: true, refresh: 10 });
+        return;
+      }
     } else {
       releaseTask(s);
       if (mdist(s.x, s.y, G.camp.x, G.camp.y) > 3) moveToward(s, G.camp.x, G.camp.y, { adjacent: true, refresh: 10 });
@@ -823,7 +923,7 @@ function updateRaider(r) {
       G.raiders = G.raiders.filter(x => x !== r);
       if (r.loot) {
         addLog('§ The thief escaped with the stolen goods.', '#e08040');
-        bumpMorale(-3);
+        bumpMorale(-3, 'goods stolen');
       }
       return;
     }
@@ -866,15 +966,10 @@ function raidComposition(n, horde) {
 }
 
 function spawnRaid() {
-  const horde = isHordeDay(G.day);
-  const uncleared = G.world ? G.world.locs.filter(l => l.type === 'bandits' && !l.cleared).length : 0;
-  let n = 2 + Math.floor((G.day - 2) / 3) + rint(0, 1) - Math.floor(G.banditsCleared / 2);
-  if (G.day >= 8) n += Math.min(3, uncleared); // ignored camps embolden them
-  if (isWinter()) n = Math.max(2, n - 2);      // even raiders shelter in winter
-  if (G.beaconDay) n += 2;                     // the light draws them
-  const cap = G.day > 20 ? 10 + Math.floor((G.day - 20) / 4) : 10;
-  n = Math.max(2, Math.min(cap, n));
-  if (horde) n = Math.max(n + 3, 4 + Math.floor(G.day / 3)); // day 12 ≈ 8, growing each cycle
+  // sizing lives in raidEstimate so the sidebar forecast can't drift from truth
+  const est = raidEstimate(G.day);
+  const horde = est.horde;
+  let n = est.n - (horde ? 1 : 0) + rint(0, 1); // warlord spawns separately; small jitter
 
   const twoFront = horde || (G.day >= 14 && chance(0.4));
   const sideA = rint(0, 3);
@@ -970,8 +1065,27 @@ function edgeWalkable() {
   return null;
 }
 
+// Growth is earned, not rolled: all conditions green → the countdown ticks.
+export function recruitEligible() {
+  const pop = G.settlers.length;
+  return G.day > 2 && pop < 16 && !isWinter() && G.res.food + G.res.meals > pop * 3
+    && housingCap() > pop && G.morale >= 35;
+}
+// Which condition is failing (for the elder and the sidebar).
+export function recruitBlocker() {
+  const pop = G.settlers.length;
+  if (pop >= 16) return 'the commune is full';
+  if (isWinter()) return 'no one travels in winter';
+  if (G.res.food + G.res.meals <= pop * 3) return 'not enough food on the fire';
+  if (housingCap() <= pop) return 'no roof to offer';
+  if (G.morale < 35) return 'word of misery spreads';
+  return null;
+}
+
 function dawnEvents() {
   addLog(`— Day ${G.day} —`, '#7a8a9a');
+  if (G.alarm) { G.alarm = false; addLog('Dawn sounds the all-clear — back to the fields.', '#8ad080'); }
+  G.moraleEvents = G.moraleEvents.filter(e => e.day >= G.day - 4);
 
   // the beacon: hold 3 days after lighting and the run ends in victory
   if (G.beaconDay && G.day >= G.beaconDay + 3) { communeAscended(); return; }
@@ -984,7 +1098,7 @@ function dawnEvents() {
     if (s.id === 'winter') { addLog('Crops sleep and bushes stand bare. Live off your stores.', '#a8c8e8'); tip('winter'); }
     if (s.id === 'spring' && G.day > SEASON_LEN * 3) {
       G.stats.winters++;
-      bumpMorale(10);
+      bumpMorale(10, 'endured winter');
       addLog('◆ The thaw! The commune endured the winter.', '#8ad080');
     }
   }
@@ -1006,23 +1120,21 @@ function dawnEvents() {
     }
   }
 
-  // wanderers join if there is food on the fire AND a roof to sleep under
-  if (G.day > 2 && pop < 16 && G.res.food + G.res.meals > pop * 3 && !isWinter()) {
-    const joinChance = Math.max(0.05, Math.min(0.5, 0.3 + (G.morale - 60) * 0.006));
-    if (housingCap() > pop) {
-      if (chance(joinChance)) {
-        const spot = edgeWalkable();
-        if (spot) {
-          const s = makeSettler(spot.x, spot.y, 'worker');
-          G.settlers.push(s);
-          updatePeak();
-          addLog(`☺ ${s.name} (${traitName(s).toLowerCase()}), a wanderer, has joined the commune!`, '#e8d8a0');
-          if (G.settlers.length === 6) addLog('◆ Commune tier II reached — watch posts, workshop, kitchen unlocked!', '#c8a0e8');
-          if (G.settlers.length === 9) addLog('◆ Commune tier III reached — stone walls unlocked!', '#c8a0e8');
-        }
+  // recruitment is a visible pipeline, not a dice roll: keep food on the
+  // fire, a roof free, and spirits up, and someone arrives on schedule
+  if (recruitEligible()) {
+    G.recruitDays--;
+    if (G.recruitDays <= 0) {
+      const spot = edgeWalkable();
+      if (spot) {
+        const s = makeSettler(spot.x, spot.y, 'worker');
+        G.settlers.push(s);
+        updatePeak();
+        addLog(`☺ ${s.name} (${traitName(s).toLowerCase()}), a wanderer, has joined the commune!`, '#e8d8a0');
+        if (G.settlers.length === 6) addLog('◆ Commune tier II reached — watch posts, workshop, kitchen unlocked!', '#c8a0e8');
+        if (G.settlers.length === 9) addLog('◆ Commune tier III reached — stone walls unlocked!', '#c8a0e8');
       }
-    } else if (chance(0.3)) {
-      addLog('A wanderer warmed their hands and moved on — no room in the houses.', '#8a94a2');
+      G.recruitDays = G.morale >= 75 ? 1 : 2; // word spreads fast about a happy commune
     }
   }
 
@@ -1034,6 +1146,74 @@ function dawnEvents() {
   if (G.beaconDay) addLog(`☼ The Beacon burns — ${G.beaconDay + 3 - G.day} day${G.beaconDay + 3 - G.day === 1 ? '' : 's'} to hold.`, '#ffe060');
   if (G.res.food + G.res.meals < pop * 2) tip('foodlow');
   if (daysToWinter() === 1) addLog('❄ Winter arrives tomorrow.', '#a8c8e8');
+}
+
+// ---------------------------------------------------------------- the elder
+// One voice, one counsel at a time: the most pressing leak in the commune,
+// or a word of seasonal calm when nothing leaks. Cached per tick.
+const dmgCache = { stamp: -1, val: { total: 0, walls: 0 } };
+function countDamaged() {
+  const stamp = G.day * 1440 + G.min;
+  if (dmgCache.stamp !== stamp) {
+    dmgCache.stamp = stamp;
+    let total = 0, walls = 0;
+    for (const tl of G.tiles) {
+      if (structDamaged(tl)) {
+        total++;
+        if (tl.t === 'wall_w' || tl.t === 'wall_s' || tl.t === 'door') walls++;
+      }
+    }
+    dmgCache.val = { total, walls };
+  }
+  return dmgCache.val;
+}
+
+const elderCache = { stamp: -1, val: null };
+export function elderCounsel() {
+  const stamp = G.day * 1440 + G.min;
+  if (elderCache.stamp === stamp && elderCache.val) return elderCache.val;
+  elderCache.stamp = stamp;
+  const name = ELDERS[G.civ] || 'The Elder';
+  const mk = (text, mood = 'calm', prog = null) => (elderCache.val = { name, text, mood, prog });
+
+  if (G.raidActive) {
+    return mk(G.raidIsHorde ? 'Fell the warlord and the horde breaks!' : 'Hold the line! Guards, to the walls!', 'alarm');
+  }
+  const starving = G.settlers.find(s => s.starving && !s.away);
+  if (starving) return mk(`${starving.name} is starving. Harvest, cook, or trade — now.`, 'alarm');
+
+  // the tutorial chain speaks with the elder's voice
+  if (G.objIdx < OBJECTIVES.length) {
+    const o = OBJECTIVES[G.objIdx];
+    return mk(`${o.text} — ${o.hint}`, tonightInfo().urgent ? 'wary' : 'calm', o.prog ? o.prog(G) : null);
+  }
+
+  const tn = tonightInfo();
+  const dmg = countDamaged();
+  if (tn.urgent) {
+    const guards = G.settlers.filter(s => s.role === 'guard' && !s.away && !s.downed).length;
+    if (!guards) return mk('War at dusk and no spears raised! Make guards of someone.', 'alarm');
+    if (dmg.walls) return mk(`War at dusk, ${dmg.walls} wall${dmg.walls > 1 ? 's' : ''} still scarred. The bell (r) waits.`, 'alarm');
+    return mk('They come at dusk. Ring the bell (r), gather early.', 'wary');
+  }
+  const down = G.settlers.find(s => s.downed);
+  if (down) return mk(`${down.name} lies wounded. Keep them safe as they crawl home.`, 'wary');
+  const fi = foodInfo();
+  if (fi.days < 3) return mk(`The larder empties in ${Math.max(1, Math.ceil(fi.days))} days. Harvest, fish, or trade.`, 'alarm');
+  if (season().id === 'autumn' && fi.stock < fi.winterNeed) {
+    return mk(`Winter will want ~${fi.winterNeed} food. We hold ${Math.round(fi.stock)}. Stockpile.`, 'wary');
+  }
+  if (G.morale < 35) return mk(`Hearts are breaking — ${moraleWhy() || 'a long, hard road'}.`, 'wary');
+  const blocked = recruitBlocker();
+  if (blocked === 'no roof to offer') return mk('Wanderers pass us by — no roof to offer. Raise a tent.', 'calm');
+  const camp = G.world && G.world.locs.find(l => l.type === 'bandits' && !l.cleared && l.diff >= 12);
+  if (camp && G.day >= 6) return mk(`${camp.name} grows bolder each day it stands. Burn it out.`, 'wary');
+  if (dmg.total >= 3) return mk(`${dmg.total} structures bear scars. The crews will mend them.`, 'calm');
+  if (communeTier() >= 3 && !G.beaconDay && !G.tiles.some(tl => tl.t === 'beacon' || (tl.build && tl.build.id === 'beacon'))) {
+    return mk('We could raise the Beacon — and end this in light.', 'calm');
+  }
+  const idle = ELDER_IDLE[season().id];
+  return mk(idle[G.day % idle.length], 'calm');
 }
 
 // ---------------------------------------------------------------- tick
@@ -1076,10 +1256,10 @@ export function tickGame() {
       if (G.raidIsHorde) {
         G.raidIsHorde = false;
         G.stats.hordes++;
-        bumpMorale(12);
+        bumpMorale(12, 'horde broken');
         addLog('◆ The horde is broken. Songs will be sung of this.', '#ffd860');
       } else {
-        bumpMorale(6);
+        bumpMorale(6, 'raid repelled');
         addLog('The raid is over. The commune holds.', '#8ad080');
       }
     }

@@ -6,17 +6,19 @@ import {
   adjustedOffer, doTrade, tryPlaceBuild, cancelAt, queueCraft, unqueueCraft, cycleRole,
   notice, tip, centerCam, season, isWinter, daysToWinter, moraleLabel, traitName, housingCap,
   selBounds, selectionInfo, assignArea, clearAreaPlans,
+  tonightInfo, foodInfo, elderCounsel, toggleAlarm, moraleWhy, recruitEligible,
 } from './game.js';
 import {
-  MAP_W, MAP_H, VIEW_W, VIEW_H, T, BUILDS, BUILD_TABS, CRAFTS, COST_ABBR, ROLE_COLORS, ROLE_LETTER,
-  LOCTYPES, CIVS, CIV_UNLOCKS, PERKS, TRADE, OBJECTIVES, INTRO,
+  MAP_W, MAP_H, VIEW_W, VIEW_H, CELL_W, CELL_H, T, BUILDS, BUILD_TABS, CRAFTS, COST_ABBR, ROLE_COLORS, ROLE_LETTER,
+  LOCTYPES, CIVS, CIV_UNLOCKS, PERKS, TRADE, INTRO,
 } from './data.js';
 import { WORLD_W, WORLD_H, partyPower, riskLabel, dangerStr, genWorld, startExpedition } from './world.js';
 import { META, hasPerk, perkLevel, buyPerk, civUnlocked } from './meta.js';
 import { drawMapTiles } from './tiles.js';
 import { drawWorldAscii, MM_COL, inspectText, panCam } from './mapdraw.js';
 import * as gfx from './gfx.js';
-import { push, pop, replaceAll, drawWidgets, focusedWidget } from './ui.js';
+import { push, pop, replaceAll, drawWidgets, focusedWidget, top } from './ui.js';
+import { elderPortrait } from './portrait.js';
 
 const { GRID_W, GRID_H, PANEL_BG, put, str, fillBg, dim, GFX, MM, toggleGfx, toggleMinimap } = gfx;
 const SB_X = 74;
@@ -68,7 +70,7 @@ function drawTip() {
   const bw = Math.max(...lines.map(l => l.length), 12) + 4;
   const x0 = Math.max(1, ((VIEW_W - bw) / 2) | 0);
   fillBg(x0, 1, bw, lines.length + 2, '#241c08');
-  str(x0 + 1, 1, '☼ TIP', '#ffd860', '#241c08');
+  str(x0 + 1, 1, `☻ ${elderCounsel().name.toUpperCase()}`, '#ffd860', '#241c08');
   str(x0 + bw - 6, 1, 'Esc ✕', '#8a7a50', '#241c08');
   lines.forEach((l, i) => str(x0 + 2, 2 + i, l, '#e8d8b0', '#241c08'));
 }
@@ -208,13 +210,14 @@ const TOOL_MODES = ['NORMAL', 'BUILD', 'CANCEL'];
 
 // single source of truth for sidebar row positions (draw + hit share this)
 function sidebarLayout() {
-  let y = 10; // 0-5 header block (incl. season + morale), 6-9 resources
+  let y = 11; // 0-6 header block (season, morale, tonight), 7-10 resources
   if (G.raidActive) y++;
+  if (G.alarm && !G.raidActive) y++;
   if (G.trader) y++;
   if (G.craftQueue.length) y++;
   if (G.beaconDay) y++;
   const objY = y;
-  y += (G.objIdx < OBJECTIVES.length) ? 3 : 1;
+  y += 6; // the elder's window: border + portrait rows + border
   const setHdrY = y;
   const settlerY = y + 1;
   let shown = Math.min(G.settlers.length, 12);
@@ -222,7 +225,7 @@ function sidebarLayout() {
   // minimap fills the slack below, shrinking to fit; a crowded settler list
   // gives up rows (down to 6) before the map is squeezed out entirely
   let mmY = settlerY + shown + expedRows + 1; // header row; map starts mmY+1
-  let mmH = Math.min(13, 37 - (mmY + 1));     // rows of map, floor above the hint block
+  let mmH = Math.min(15, 40 - (mmY + 1));     // rows of map, floor above the slim hint block
   if (MM.on && mmH < 7) {
     const give = Math.min(7 - mmH, Math.max(0, shown - 6));
     shown -= give; mmY -= give; mmH += give;
@@ -231,6 +234,17 @@ function sidebarLayout() {
   const expedY = G.expeditions.length ? y2 : -1;
   const mmOn = MM.on && mmH >= 7;
   return { objY, setHdrY, settlerY, shown, expedY, mmY, mmH, mmOn, mmW: 25 };
+}
+
+function wrapText(text, w) {
+  const lines = [];
+  let cur = '';
+  for (const word of text.split(' ')) {
+    if ((cur + ' ' + word).trim().length > w) { lines.push(cur.trim()); cur = word; }
+    else cur += ' ' + word;
+  }
+  if (cur.trim()) lines.push(cur.trim());
+  return lines;
 }
 
 function hpBar(hp, max, w) {
@@ -303,6 +317,10 @@ export function makeGameScreen() {
     widgets() {
       const ws = [];
       const lay = sidebarLayout();
+      ws.push({ // the morale meter explains itself on click
+        rect: { x: SB_X, y: 4, w: 25, h: 1 },
+        onClick: () => notice(moraleWhy() || 'Spirits are level — nothing weighs on them.'),
+      });
       G.settlers.slice(0, lay.shown).forEach((s, i) => {
         ws.push({
           rect: { x: SB_X, y: lay.settlerY + i, w: 25, h: 1 },
@@ -356,7 +374,11 @@ export function makeGameScreen() {
           else G.mode = 'NORMAL';
           return;
         }
-      } else if (k === 'Escape') { G.mode = 'NORMAL'; G.buildSel = null; return; }
+      } else if (k === 'Escape') {
+        if (G.mode !== 'NORMAL') { G.mode = 'NORMAL'; G.buildSel = null; return; }
+        push(makePauseMenu()); // a quiet Esc opens the pause menu
+        return;
+      }
 
       if (k === 'Q') { save(); replaceAll(makeMenuScreen()); return; }
       if (k === ' ') { G.paused = !G.paused; return; }
@@ -376,6 +398,7 @@ export function makeGameScreen() {
       if (G.mode !== 'BUILD') {
         if (k === 'b') { G.mode = 'BUILD'; G.buildSel = null; return; }
         if (k === 'x') { G.mode = 'CANCEL'; return; }
+        if (k === 'r') { toggleAlarm(); return; }
         if (k === 'e') {
           if (G.trader) push(makeTradeModal());
           else notice('No trader in camp right now');
@@ -461,32 +484,57 @@ export function makeGameScreen() {
       str(SB_X, y, 'Morale ', '#8a94a2');
       str(SB_X + 7, y, '█'.repeat(mb) + '░'.repeat(8 - mb), mCol);
       str(SB_X + 16, y++, ` ${moraleLabel()}`.slice(0, 10), mCol);
+      const tn = tonightInfo();
+      str(SB_X, y++, tn.label.slice(0, 26), tn.urgent && (f >> 3) % 2 ? '#ffd870' : tn.fg);
       str(SB_X, y++, '─'.repeat(25), '#3a3f4a');
       const R = G.res;
-      str(SB_X, y++, `Food ${String(R.food).padEnd(4)}Meals ${R.meals}`, '#c8c2b0');
+      const fi = foodInfo();
+      const burnStr = fi.perDay < 10 ? fi.perDay.toFixed(1) : String(Math.round(fi.perDay));
+      const daysStr = fi.days > 30 ? '30+' : fi.days.toFixed(fi.days < 10 ? 1 : 0);
+      str(SB_X, y++, `Food ${R.food}+${R.meals}m −${burnStr}/d ·${daysStr}d`.slice(0, 26), fi.days < 3 ? '#e05040' : fi.days < 6 ? '#e0c060' : '#c8c2b0');
       str(SB_X, y++, `Wood ${String(R.wood).padEnd(4)}Stone ${R.stone}`, '#a8a296');
       str(SB_X, y++, `Scrap ${String(R.scrap).padEnd(3)}Herbs ${R.herbs}`, '#a8a296');
       str(SB_X, y++, `Coin ${String(R.coin).padEnd(4)}Wpn ${R.weapons}  Med ${R.meds}`, '#d8c860');
       if (G.raidActive) str(SB_X, y++, `⚠ ${G.raidIsHorde ? 'HORDE' : 'RAIDERS'}: ${G.raiders.length}`, (f >> 3) % 2 ? '#ff5040' : '#a03028');
+      if (G.alarm && !G.raidActive) str(SB_X, y++, '♪ ALARM — r stands down', (f >> 3) % 2 ? '#e0c060' : '#907830');
       if (G.trader) str(SB_X, y++, '¤ trader in camp — e trade', '#ffd860');
       if (G.craftQueue.length) str(SB_X, y++, `Ω workshop queue: ${G.craftQueue.length}`, '#c08a50');
       if (G.beaconDay) {
         const hold = Math.max(0, G.beaconDay + 3 - G.day);
         str(SB_X, y++, `☼ BEACON — hold ${hold}d more`, (f >> 3) % 2 ? '#ffe060' : '#b09030');
       }
-      // objective tracker
-      if (G.objIdx < OBJECTIVES.length) {
-        const o = OBJECTIVES[G.objIdx];
-        const flash = G.objFlash > performance.now();
-        str(SB_X, lay.objY, '─ OBJECTIVE ' + '─'.repeat(13), flash ? '#3a5a42' : '#3a3f4a');
-        const pr = o.prog ? o.prog(G) : null;
-        str(SB_X, lay.objY + 1, `► ${o.text}${pr ? ` (${pr[0]}/${pr[1]})` : ''}`.slice(0, 26), flash ? '#8ad080' : '#ffd870');
-        str(SB_X, lay.objY + 2, `  ${o.hint}`.slice(0, 26), '#8a94a2');
-      } else {
-        str(SB_X, lay.objY, '◆ all objectives complete', '#c8a0e8');
+      // the elder's window: a framed portrait whose face carries the mood
+      const el = elderCounsel();
+      const flash = G.objFlash > performance.now();
+      const bx = SB_X, by = lay.objY, bw = 25, pbg = '#131622';
+      fillBg(bx, by, bw, 6, pbg);
+      const bcol = flash ? '#3a5a42' : el.mood === 'alarm' ? '#6a3030' : '#3a3f4a';
+      put(bx, by, '╭', bcol, pbg); put(bx + bw - 1, by, '╮', bcol, pbg);
+      put(bx, by + 5, '╰', bcol, pbg); put(bx + bw - 1, by + 5, '╯', bcol, pbg);
+      for (let i = 1; i < bw - 1; i++) { put(bx + i, by, '─', bcol, pbg); put(bx + i, by + 5, '─', bcol, pbg); }
+      for (let r = 1; r < 5; r++) { put(bx, by + r, '│', bcol, pbg); put(bx + bw - 1, by + r, '│', bcol, pbg); }
+      str(bx + 2, by, ` ${el.name.toUpperCase()} `.slice(0, bw - 4), flash ? '#8ad080' : '#c8b890', pbg);
+      // the portrait: pixel-art elder, expression follows the mood
+      const fx = bx + 2;
+      fillBg(fx - 1, by + 1, 7, 4, '#1a1610');
+      if (top() === scr) { // skip while a modal is up — nothing paints over menus
+        const img = elderPortrait(G.civ, el.mood);
+        gfx.setOverlayPainter((octx) => {
+          octx.save();
+          octx.imageSmoothingEnabled = false;
+          octx.drawImage(img, (fx - 1) * CELL_W + 5, (by + 1) * CELL_H + 2);
+          octx.restore();
+        });
       }
-      const hdr = `─ SETTLERS ${G.settlers.length} · roofs ⌂${housingCap()} `;
-      str(SB_X, lay.setHdrY, (hdr + '─'.repeat(Math.max(0, 25 - hdr.length))).slice(0, 26), '#3a3f4a');
+      // the counsel, spoken beside the face
+      const prog = el.prog ? ` (${el.prog[0]}/${el.prog[1]})` : '';
+      const lines = wrapText(el.text + prog, 15);
+      for (let i = 0; i < 4; i++) {
+        str(bx + 9, by + 1 + i, (lines[i] || '').slice(0, 15), i === 0 ? (flash ? '#8ad080' : '#e8d8b0') : '#b8b2a0', pbg);
+      }
+      const grow = recruitEligible() ? ` ☺${G.recruitDays}d` : '';
+      const shdr = `─ SETTLERS ${G.settlers.length} · ⌂${housingCap()}${grow} `;
+      str(SB_X, lay.setHdrY, (shdr + '─'.repeat(Math.max(0, 25 - shdr.length))).slice(0, 26), '#3a3f4a');
       G.settlers.slice(0, lay.shown).forEach((s, i) => {
         const yy = lay.settlerY + i;
         const bar = hpBar(s.hp, s.maxHp, 6);
@@ -508,24 +556,21 @@ export function makeGameScreen() {
           str(SB_X, lay.expedY + 1 + i, `⚑ ${loc.name.slice(0, 13)} ${e.phase === 'out' ? '►out' : '◄home'} ${(e.t / 1440).toFixed(1)}d`, '#9ac0d8');
         });
       }
-      // mode hints pinned to the bottom
-      let hy = GRID_H - 6;
+      // two context lines at the bottom; the full reference lives in Esc → help
+      let hy = GRID_H - 2;
       str(SB_X, hy - 1, '─'.repeat(25), '#3a3f4a');
-      const hint = (a, b) => { str(SB_X, hy++, a, '#8a94a2'); if (b) str(SB_X, hy++, b, '#8a94a2'); };
       if (G.mode === 'BUILD') {
-        str(SB_X, hy++, 'MODE: BUILD', '#e8c860');
-        hint(G.buildSel ? `→ ${G.buildSel.name}` : '←→ tabs · a-e picks');
-        hint('click/drag map to place', 'Esc to finish');
+        str(SB_X, hy++, `BUILD: ${G.buildSel ? G.buildSel.name : '←→ tabs · a-e'}`.slice(0, 26), '#e8c860');
+        str(SB_X, hy, G.buildSel ? 'click/drag map · Esc back' : 'Enter/click pick · Esc', '#8a94a2');
       } else if (G.mode === 'CANCEL') {
-        str(SB_X, hy++, 'MODE: DEMOLISH', '#e8c860');
-        hint('click plans/structures', 'Esc done');
+        str(SB_X, hy++, 'DEMOLISH: click structures', '#e8c860');
+        str(SB_X, hy, 'Esc done', '#8a94a2');
       } else if (G.sel) {
-        str(SB_X, hy++, 'SELECTING', '#e8c860');
-        hint('stretch the box, then', 'release/Enter → orders');
+        str(SB_X, hy++, 'SELECTING: stretch the box', '#e8c860');
+        str(SB_X, hy, 'release/Enter → orders', '#8a94a2');
       } else {
-        hint('drag a box → orders', 'b build x demolish');
-        hint('w world e trade v gfx', 'pan: wheel · shift+arrows');
-        hint('? help · spc pause', 'click name → role');
+        str(SB_X, hy++, 'drag a box → orders', '#8a94a2');
+        str(SB_X, hy, 'Esc menu · ? help · b build', '#8a94a2');
       }
     },
 
@@ -753,6 +798,50 @@ function makePartyModal(locIdx) {
 }
 
 // ---------------------------------------------------------------- modals
+// The pause menu: settings, save, help, and the way out. Esc from a quiet
+// map opens it; the sim holds its breath while it's up.
+function makePauseMenu() {
+  const bw = 40;
+  const x0 = ((GRID_W - bw) / 2) | 0;
+  const items = [
+    { key: '1', label: () => 'Resume', fg: '#e8d8a0', act: () => pop() },
+    { key: '2', label: () => 'Save now', fg: '#8ad080', act: () => { save(); notice('The run is saved'); pop(); } },
+    { key: '3', label: () => 'How to play', fg: '#9ac0d8', act: () => push(makeHelpModal()) },
+    { key: '4', label: () => `Graphics: ${GFX.mode === 'tiles' ? 'Tiles' : 'ASCII'}`, fg: '#9ac0d8', act: () => toggleGfx() },
+    { key: '5', label: () => `Minimap: ${MM.on ? 'shown' : 'hidden'}`, fg: '#9ac0d8', act: () => toggleMinimap() },
+    { key: '6', label: () => 'Save & quit to title', fg: '#e0a080', act: () => { save(); replaceAll(makeMenuScreen()); } },
+  ];
+  const bh = items.length * 2 + 5;
+  const y0 = ((GRID_H - bh) / 2) | 0;
+  const scr = {
+    id: 'pause', modal: true, pausesSim: true, focus: 0,
+    widgets: items.map((it, i) => ({
+      rect: { x: x0, y: y0 + 3 + i * 2, w: bw, h: 1 },
+      focusable: true,
+      onActivate: it.act,
+      draw(w, focused) {
+        const bg = focused ? '#22304a' : '#12151e';
+        if (focused) fillBg(x0, w.rect.y, bw, 1, bg);
+        str(x0 + 2, w.rect.y, `${focused ? '►' : ' '}${it.key}) ${it.label()}`, focused ? '#ffe8a0' : it.fg, bg);
+      },
+    })),
+    keymap: { Escape: () => pop() },
+    onKey(k) {
+      const it = items.find(i => i.key === k);
+      if (it) it.act();
+    },
+    draw(f) {
+      fillBg(x0, y0, bw, bh, '#12151e');
+      const title = '‖ PAUSED';
+      str(x0 + (((bw - title.length) / 2) | 0), y0 + 1, title, (f >> 4) % 2 ? '#e0a040' : '#a07830', '#12151e');
+      drawWidgets(this, f);
+      str(x0 + 2, y0 + bh - 2, 'runs autosave at dawn · Esc resume', '#6a7484', '#12151e');
+      drawNotice();
+    },
+  };
+  return scr;
+}
+
 // AoE-style area orders: drag a box over the map, then say what the crew
 // should do with what's inside it.
 function makeOrdersMenu(b, info) {
@@ -914,15 +1003,20 @@ function makeHelpModal() {
     ['', ''],
     ['Keep everyone fed, build defenses, survive the raids, and send', '#b8b2a0'],
     ['parties into the world. When the commune falls, its story becomes', '#b8b2a0'],
-    ['legacy — spend it on permanent perks for the next run.', '#b8b2a0'],
+    ['legacy — spend it on permanent perks for the next run. Your elder', '#b8b2a0'],
+    ['speaks in the sidebar: one counsel at a time. The sidebar also', '#b8b2a0'],
+    ['shows what dusk brings, how long the food lasts, and when the', '#b8b2a0'],
+    ['next wanderer arrives. Click the morale bar to hear why.', '#b8b2a0'],
     ['', ''],
     ['drag    a box on the map → orders menu: chop ♠ · mine ▲ ·', '#c8c2b0'],
     ['        forage " · fish ≈ · clear marks (Esc to cancel)', '#c8c2b0'],
     ['b       build menu · tabs (←→): HOMES FOOD DEFENSE WORKS', '#c8c2b0'],
     ['x       demolish structures / cancel single plans', '#c8c2b0'],
+    ['r       ring the alarm bell — folk to the fire, guards to posts', '#c8c2b0'],
     ['w       world map — scout (1 settler) or raid (a party)', '#c8c2b0'],
     ['e       trade with the visiting caravan (every few days)', '#c8c2b0'],
-    ['space   pause · 1/2/3 game speed · Esc close menus', '#c8c2b0'],
+    ['Esc     pause menu — save, settings, help, quit', '#c8c2b0'],
+    ['space   pause · 1/2/3 game speed', '#c8c2b0'],
     ['v       toggle graphics: pixel tiles / classic ASCII', '#c8c2b0'],
     ['pan     trackpad/wheel · shift+arrows · middle-drag · minimap (n)', '#c8c2b0'],
     ['Q       save & quit to the main menu (progress kept)', '#c8c2b0'],

@@ -141,7 +141,7 @@ function resolveExpedition(e, loc) {
 
   if (success) {
     G.stats.sites++;
-    bumpMorale(4);
+    bumpMorale(4, 'victory abroad');
     addLog(`⚑ The party cleared ${loc.name}!`, '#8ad080');
     for (const s of members) s.hp = Math.max(1, s.hp - rint(0, 4));
     if (loc.type === 'bandits') {
@@ -166,7 +166,7 @@ function resolveExpedition(e, loc) {
       addLog(`A stranger, ${s.name} (${traitName(s).toLowerCase()}), asked to walk home with the party.`, '#e8d8a0');
     }
   } else {
-    bumpMorale(-5);
+    bumpMorale(-5, 'defeat abroad');
     addLog(`⚑ The party was overwhelmed at ${loc.name} and fell back.`, '#e08040');
     const survivors = members.length;
     for (const s of members) {
@@ -180,7 +180,7 @@ function resolveExpedition(e, loc) {
           addLog(`☠ ${s.name} died at ${loc.name}.`, '#e05040');
           e.ids = e.ids.filter(i => i !== s.id);
           G.settlers = G.settlers.filter(x => x !== s);
-          bumpMorale(-8);
+          bumpMorale(-8, 'a death abroad');
         }
       }
     }

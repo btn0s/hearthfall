@@ -65,6 +65,27 @@ export const BUILDS = [
   { key: 'b', cat: 'works',   id: 'beacon',    name: 'The Beacon', cost: { wood: 30, stone: 20, coin: 15 }, work: 220, hp: 200, tier: 3 },
 ];
 
+// Structure hit points by tile id (repair and damage display read this).
+export const STRUCT_HP = Object.fromEntries(BUILDS.filter(b => b.hp).map(b => [b.id, b.hp]));
+
+// ---------------------------------------------------------------- the elder
+// One voice guides the player: tutorial objectives, warnings, and counsel
+// all come from the commune's elder. Mood drives the portrait color.
+export const ELDERS = {
+  tillers: 'Elder Maren',
+  wardens: 'Captain Bryn',
+  ratcatchers: 'Aunt Odessa',
+  masons: 'Master Hewe',
+};
+
+// Idle counsel when nothing needs fixing, by season.
+export const ELDER_IDLE = {
+  spring: ['The thaw is kind. Plant, build, breathe.', 'Good soil, good folk. Make use of both.'],
+  summer: ['Long days. Fill the stores while they last.', 'The commune hums. Keep it humming.'],
+  autumn: ['Every meal we dry now is a day of winter.', 'The cold is patient. Be more so.'],
+  winter: ['Endure. Spring always comes.', 'Huddle close, waste nothing.'],
+};
+
 // Crafting recipes — ordered from a built workshop, not the build menu.
 export const CRAFTS = [
   { id: 'c_spear', name: 'Craft spear', cost: { wood: 3, scrap: 1 }, work: 12 },

@@ -7,10 +7,15 @@ State of Decay community pressure, Fallout 4 base building, and a
 death-feeds-the-next-run legacy loop. No dependencies, no build step: plain
 ES modules rendered to a canvas character grid.
 
-New players are guided in: a story splash opens each run, an **objective
-chain** in the sidebar walks you from first tree to first bandit camp
-(with resource and legacy rewards), and one-time contextual **tips** fire
-at key moments — first night, low food, first raid, first trader.
+New players are guided in by **the Elder** — one voice in the sidebar
+that speaks the tutorial objectives, fires one-time tips at key moments,
+and afterwards always names the commune's most pressing problem (their
+face turns from calm to worried to alarmed as trouble nears). The
+sidebar forecasts everything that matters: what tonight brings (raid
+size included), how many days the food lasts, when the next wanderer
+arrives and what's blocking them, and why morale sits where it does
+(click the bar). Structures show their scars and workers repair them
+for a trickle of material — nothing rots invisibly.
 
 Two graphics modes, toggled with `v` (or from the main menu, persisted):
 **Tiles** — procedurally drawn pixel-art sprites with animated water and
@@ -65,9 +70,11 @@ world sites, stouter morale, +25% legacy income.
 | click a workshop | production orders — queue spears and medkits, cancel for a refund |
 | drag on the map | select an area, then pick from the orders menu: chop trees ♠ · mine rocks ▲ · forage bushes `"` · fish water ≈ · clear marks |
 | `x` | demolish / cancel single plans |
+| `r` | ring the alarm bell — civilians run for the fire, guards stand to their posts (all-clear at dawn) |
 | `w` | world map — send one settler to scout a site, or a party to take it |
 | `e` | trade with the visiting caravan (arrives every few days) |
-| `space` | pause · `1/2/3` game speed · `?` help · `Esc` close menus |
+| `Esc` | pause menu — resume, save, settings, how-to-play, quit (also closes whatever's open) |
+| `space` | pause · `1/2/3` game speed · `?` help |
 | `v` | toggle graphics: pixel tiles / classic ASCII |
 | `Q` | save & quit to the main menu |
 | click | a settler's name (sidebar or map) cycles their role |
