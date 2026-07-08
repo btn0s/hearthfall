@@ -32,8 +32,6 @@ function migrate(d) {
   if (!d.version) {
     for (const k of EPHEMERAL) delete d[k];
     d.usedNames = new Set(d.usedNames || []);
-    d.stats = { ...makeState().stats, ...(d.stats || {}) };
-    d.mods = { ...makeState().mods, ...(d.mods || {}) };
     for (const s of d.settlers || []) {
       if (!s.trait) s.trait = choice(Object.keys(TRAITS));
       if (s.downed === undefined) s.downed = false;
@@ -59,6 +57,8 @@ function migrate(d) {
       y: Math.max(0, Math.min(MAP_H - VIEW_H, Math.round(cy - VIEW_H / 2))),
     };
   }
+  d.stats = { ...makeState().stats, ...(d.stats || {}) };
+  d.mods = { ...makeState().mods, ...(d.mods || {}) };
   d.buildSel = null; d.notice = null; d.tip = null; d.sel = null;
   if (!(d.usedNames instanceof Set)) d.usedNames = new Set(d.usedNames || []);
   return d;
