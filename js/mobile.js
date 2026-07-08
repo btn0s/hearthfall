@@ -3,19 +3,10 @@
 // from the real sprite atlas. No screenshots, no fakery — the game renders
 // its own welcome mat for screens too small to play on.
 import { getAtlas } from './tiles.js';
+import { FONT } from './glyph.js';
 
 const GATE_MQ = '(max-width: 899px), ((pointer: coarse) and (max-width: 1200px))';
 const FLAME = ['#ffdf70', '#ffc050', '#ff9030', '#e06020', '#b04818'];
-// same glyphs the title screen uses
-const FONT = {
-  H: ['█ █', '█ █', '███', '█ █', '█ █'],
-  E: ['███', '█  ', '██ ', '█  ', '███'],
-  A: ['███', '█ █', '███', '█ █', '█ █'],
-  R: ['██ ', '█ █', '██ ', '█ █', '█ █'],
-  T: ['███', ' █ ', ' █ ', ' █ ', ' █ '],
-  F: ['███', '█  ', '██ ', '█  ', '█  '],
-  L: ['█  ', '█  ', '█  ', '█  ', '███'],
-};
 
 function drawLogo(cv) {
   const word = 'HEARTHFALL';

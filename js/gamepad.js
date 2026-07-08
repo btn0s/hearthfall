@@ -1,10 +1,10 @@
 // Controller support via the Gamepad API. Buttons are edge-detected (with
-// key-repeat for held directions/confirm) and translated into the same
-// virtual keys the keyboard uses, so every screen works identically.
+// key-repeat for held directions) and translated into virtual keys.
 //
 // Mapping (standard layout):
 //   d-pad / left stick  move cursor · navigate menus
-//   A (0)               confirm / act — edge-triggered (no repeat)
+//   A (0)               confirm — edge-triggered
+//   held A in build/cancel  Paint (repeat) for drag-placing
 //   B (1)               back / cancel
 //   X (2)               build menu
 //   Y (3)               world map
@@ -13,7 +13,8 @@
 //   Back (8)            help · Start (9) pause
 //   R3 (11)             toggle graphics mode
 import { dispatchKey } from './ui.js';
-import { notice } from './game.js';
+import { notice } from './journal.js';
+import { G } from './state.js';
 const handleKey = (k) => dispatchKey(k, {});
 
 const held = {}, nextT = {};
@@ -44,7 +45,6 @@ export function pollGamepad() {
   const lx = ax[0] || 0, ly = ax[1] || 0;
   const rx = ax[2] || 0, ry = ax[3] || 0;
 
-  // right stick pans the camera
   fire('panL', rx < -0.5, 'PAN_LEFT', now, true);
   fire('panR', rx > 0.5, 'PAN_RIGHT', now, true);
   fire('panU', ry < -0.5, 'PAN_UP', now, true);
@@ -54,7 +54,8 @@ export function pollGamepad() {
   fire('down', b(13) || ly > 0.5, 'ArrowDown', now, true);
   fire('left', b(14) || lx < -0.5, 'ArrowLeft', now, true);
   fire('right', b(15) || lx > 0.5, 'ArrowRight', now, true);
-  fire('a', b(0), 'Enter', now, false);
+  fire('a', b(0) && G.mode === 'NORMAL', 'Enter', now, false);
+  fire('paint', b(0) && G.mode !== 'NORMAL', 'Paint', now, true);
   fire('b', b(1), 'Escape', now, false);
   fire('x', b(2), 'b', now, false);
   fire('y', b(3), 'w', now, false);

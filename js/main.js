@@ -1,5 +1,6 @@
-import { G, tickGame, save } from './game.js';
-import { tickWorld, worldDawn } from './world.js';
+import { G, tickGame } from './game.js';
+import { tickWorld } from './world.js';
+import { onDawn } from './dawn.js';
 import * as gfx from './gfx.js';
 import { stack, push, replaceAll, inStack, setupInput, renderFrame } from './ui.js';
 import { makeMenuScreen, makeGameOverModal } from './screens.js';
@@ -14,7 +15,7 @@ replaceAll(makeMenuScreen());
 function advanceMinute() {
   const ev = tickGame();
   tickWorld();
-  if (ev && ev.dawn) { worldDawn(); save(); }
+  if (ev && ev.dawn) onDawn();
   return ev;
 }
 

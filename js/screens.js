@@ -3,7 +3,7 @@
 // clicking, focus, and drawing always agree.
 import {
   G, tileAt, inMap, timeStr, communeTier, hasSave, loadGame, newGame, save,
-  adjustedOffer, doTrade, tryPlaceBuild, cancelAt, queueCraft, unqueueCraft, cycleRole,
+  adjustedOffer, doTrade, tryPlaceBuild, cancelAt, queueCraft, unqueueCraft, cycleRole, settlerActive, settlersAvailable,
   notice, tip, centerCam, season, isWinter, daysToWinter, moraleLabel, traitName, housingCap,
   selBounds, selectionInfo, assignArea, clearAreaPlans,
   tonightInfo, foodInfo, elderCounsel, toggleAlarm, moraleWhy, recruitEligible,
@@ -19,36 +19,14 @@ import { drawWorldAscii, MM_COL, inspectText, panCam } from './mapdraw.js';
 import * as gfx from './gfx.js';
 import { push, pop, replaceAll, drawWidgets, focusedWidget, top } from './ui.js';
 import { elderPortrait } from './portrait.js';
+import { drawBig } from './glyph.js';
+import { makeListScreen } from './ui/menu.js';
 
 const { GRID_W, GRID_H, PANEL_BG, put, str, fillBg, dim, GFX, MM, toggleGfx, toggleMinimap } = gfx;
 const SB_X = 74;
 const LOG_Y = VIEW_H + 1;
 
 // ---------------------------------------------------------------- shared bits
-const FONT = {
-  H: ['█ █', '█ █', '███', '█ █', '█ █'],
-  E: ['███', '█  ', '██ ', '█  ', '███'],
-  A: ['███', '█ █', '███', '█ █', '█ █'],
-  R: ['██ ', '█ █', '██ ', '█ █', '█ █'],
-  T: ['███', ' █ ', ' █ ', ' █ ', ' █ '],
-  F: ['███', '█  ', '██ ', '█  ', '█  '],
-  L: ['█  ', '█  ', '█  ', '█  ', '███'],
-};
-function drawBig(x0, y0, word, colors) {
-  let x = x0;
-  for (const c of word) {
-    const glyph = FONT[c];
-    if (glyph) {
-      for (let r = 0; r < 5; r++) {
-        for (let i = 0; i < glyph[r].length; i++) {
-          if (glyph[r][i] !== ' ') put(x + i, y0 + r, '█', colors[r]);
-        }
-      }
-    }
-    x += 4;
-  }
-}
-
 function drawNotice() {
   if (G.notice && G.notice.until > performance.now()) {
     const t = ' ' + G.notice.text + ' ';
@@ -281,7 +259,7 @@ function paintCell(x, y, isDrag) {
 function clickInteract(x, y) {
   if (G.trader && G.trader.x === x && G.trader.y === y) { push(makeTradeModal()); return true; }
   if (tileAt(x, y).t === 'workshop') { push(makeWorkshopModal()); return true; }
-  const s = G.settlers.find(s => !s.away && s.x === x && s.y === y);
+  const s = G.settlers.find(s => settlerActive(s) && s.x === x && s.y === y);
   if (s) { cycleRole(s); return true; }
   return false;
 }
@@ -323,6 +301,7 @@ export function makeGameScreen() {
         onClick: () => notice(moraleWhy() || 'Spirits are level — nothing weighs on them.'),
       });
       G.settlers.slice(0, lay.shown).forEach((s, i) => {
+        if (!settlerActive(s)) return;
         ws.push({
           rect: { x: SB_X, y: lay.settlerY + i, w: 25, h: 1 },
           onClick: () => { const cur = G.settlers.find(x => x.id === s.id); if (cur) cycleRole(cur); },
@@ -411,10 +390,11 @@ export function makeGameScreen() {
       if (k === 'ArrowDown') return moveCursor(0, 1);
       if (k === 'ArrowLeft') return moveCursor(-1, 0);
       if (k === 'ArrowRight') return moveCursor(1, 0);
-      if (k === 'Enter') {
+      if (k === 'Enter' || k === 'Paint') {
         if (!inMap(G.cursor.x, G.cursor.y)) { moveCursor(0, 0); return; }
         const cx = G.cursor.x, cy = G.cursor.y;
-        if (G.mode !== 'NORMAL') { paintCell(cx, cy, false); return; }
+        if (G.mode !== 'NORMAL') { paintCell(cx, cy, k === 'Paint'); return; }
+        if (k === 'Paint') return;
         if (G.sel) { resolveSelection(); return; }              // second press: confirm the box
         if (clickInteract(cx, cy)) return;                       // settler / trader / workshop
         G.sel = { ax: cx, ay: cy, bx: cx, by: cy, kb: true };    // first press: anchor a box
@@ -712,7 +692,7 @@ export function makeWorldScreen() {
         str(px, dy++, lt.desc.slice(0, 42), '#8a94a2');
         str(px, dy++, `Danger ${dangerStr(selLoc)}${selLoc.scouted ? '' : ' (unscouted)'}   Travel ${(selLoc.travel / 1440).toFixed(1)}d`, '#a8a296');
         if (selLoc.type === 'bandits' && !selLoc.cleared) str(px, dy++, 'It grows bolder every day it stands.', '#e0a040');
-        str(px, dy++, `${G.settlers.filter(s => !s.away && !s.downed).length} settlers fit to travel`, '#8a94a2');
+        str(px, dy++, `${settlersAvailable().length} settlers fit to travel`, '#8a94a2');
         str(px, dy++, 'send ONE settler to scout it safely', '#6a7484');
       }
       dy++;
@@ -731,7 +711,7 @@ export function makeWorldScreen() {
 function makePartyModal(locIdx) {
   tip('scout');
   const sel = new Set();
-  const avail = () => G.settlers.filter(s => !s.away && !s.downed);
+  const avail = settlersAvailable;
   const bw = 52;
   const x0 = ((GRID_W - bw) / 2) | 0;
   const scr = {
@@ -814,33 +794,17 @@ function makePauseMenu() {
   ];
   const bh = items.length * 2 + 5;
   const y0 = ((GRID_H - bh) / 2) | 0;
-  const scr = {
-    id: 'pause', modal: true, pausesSim: true, focus: 0,
-    widgets: items.map((it, i) => ({
-      rect: { x: x0, y: y0 + 3 + i * 2, w: bw, h: 1 },
-      focusable: true,
-      onActivate: it.act,
-      draw(w, focused) {
-        const bg = focused ? '#22304a' : '#12151e';
-        if (focused) fillBg(x0, w.rect.y, bw, 1, bg);
-        str(x0 + 2, w.rect.y, `${focused ? '►' : ' '}${it.key}) ${it.label()}`, focused ? '#ffe8a0' : it.fg, bg);
-      },
-    })),
-    keymap: { Escape: () => pop() },
-    onKey(k) {
-      const it = items.find(i => i.key === k);
-      if (it) it.act();
-    },
-    draw(f) {
+  return makeListScreen({
+    id: 'pause', items, x0, y0: y0 + 3, w: bw, rowH: 2, pausesSim: true,
+    keymapExtra: { Escape: () => pop() },
+    drawChrome(f) {
       fillBg(x0, y0, bw, bh, '#12151e');
       const title = '‖ PAUSED';
       str(x0 + (((bw - title.length) / 2) | 0), y0 + 1, title, (f >> 4) % 2 ? '#e0a040' : '#a07830', '#12151e');
-      drawWidgets(this, f);
       str(x0 + 2, y0 + bh - 2, 'runs autosave at dawn · Esc resume', '#6a7484', '#12151e');
       drawNotice();
     },
-  };
-  return scr;
+  });
 }
 
 // AoE-style area orders: drag a box over the map, then say what the crew

@@ -64,6 +64,14 @@ export function partyPower(members) {
   return (base + Math.min(G.res.weapons, members.length) * 3) * G.mods.expPower;
 }
 
+function snapParty(members) {
+  return members.map(s => ({ id: s.id, role: s.role, hp: s.hp, trait: s.trait }));
+}
+
+function powerFromSnapshot(party) {
+  return partyPower(party);
+}
+
 // What the player is allowed to know about a site's danger.
 export function dangerStr(loc) {
   return loc.scouted ? `~${loc.diff}` : `${Math.max(1, loc.diff - 2)}–${loc.diff + 2}?`;
@@ -92,8 +100,9 @@ export function startExpedition(locIdx, ids) {
   G.stats.expeditions++;
   const scout = members.length === 1;
   const travel = Math.max(30, Math.round(loc.travel * (scout ? 0.7 : 1))); // one rider moves fast
-  const power = partyPower(members);
-  G.expeditions.push({ locIdx, ids: members.map(s => s.id), phase: 'out', t: travel, total: travel, loot: null, scout, power });
+  const party = snapParty(members);
+  const power = powerFromSnapshot(party);
+  G.expeditions.push({ locIdx, ids: members.map(s => s.id), party, phase: 'out', t: travel, total: travel, loot: null, scout, power });
   if (scout) addLog(`⚑ ${members[0].name} rides out alone to scout ${loc.name}.`, '#9ac0d8');
   else addLog(`⚑ ${members.map(s => s.name).join(', ')} set out for ${loc.name} (${((travel * 2) / 1440).toFixed(1)}d round trip).`, '#9ac0d8');
   return true;
@@ -125,7 +134,7 @@ function resolveExpedition(e, loc) {
   else if (ev < 0.27) { lootMult = 1.5; addLog(`⚑ The road was kind — ${loc.name} lay unwatched.`, '#8ad080'); }
   else if (ev < 0.35) { e.slow = true; }
 
-  const power = e.power ?? partyPower(members);
+  const power = e.power ?? (e.party ? powerFromSnapshot(e.party) : partyPower(members));
   const danger = loc.diff * 2.6 * (0.8 + rnd() * 0.4) * dangerMult;
   const success = power >= danger;
   loc.scouted = true;
