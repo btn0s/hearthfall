@@ -14,6 +14,8 @@ starting, honor its STOP conditions, and update your row when done.
 | 003 | CI, AGENTS.md, README code map | P0-9..P0-11 | P1 | S | — | DONE |
 | 004 | Characterization tests: legacy scoring, perks, save/migration | P1-1 | P1 | M | — | DONE |
 | 005 | Fixed-grid sidebar layout (revised P1-10) | P1-10 | P1 (user priority) | M | 001–004 recommended | DONE |
+| 006 | Characterization tests: combat + economy tick | P1-2 | P1 | M | 004 recommended | DONE |
+| 007 | Characterization tests: raids, pathing, expeditions | P1-3 | P1 | M | 004 recommended | DONE |
 | ~~005~~ | ~~Fit-to-window layout~~ | ~~P1-10~~ | — | — | — | REJECTED (owner: keep CRT container) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
@@ -26,12 +28,10 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 005 (revised) decompresses the sidebar inside the fixed 100×45 grid — the
   original fit-to-window plan was rejected. It should still land **before**
   the roadmap's P1-5 `screens.js` split.
-- Not yet planned (next batch, in roadmap order): P1-2/P1-3 (combat/economy and
-  raid/path tests), P1-4 (balance table), P1-5 (screens split), then the
-  **HP0 milestone** (ROADMAP.md — the GDD v2 Hypothesis Playable, starting
-  with HP-1 campaign store, HP-2 cast v2, HP-5 menace/scouting). The old
-  Phase 2–4 items were reconciled into HP0 on 2026-07-07; plans written
-  against old P2-*/P3-*/P4-* IDs would be stale — none exist yet.
+- Not yet planned (next batch, in roadmap order): P1-4 (balance table), P1-5
+  (screens split), P1-6..P1-9 refactors, then the **HP0 milestone**
+  (ROADMAP.md — the GDD v2 Hypothesis Playable, starting with HP-1 campaign
+  store, HP-2 cast v2, HP-5 menace/scouting).
 
 ## Findings considered and rejected
 
