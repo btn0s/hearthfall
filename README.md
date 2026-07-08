@@ -122,18 +122,20 @@ raid; a camp left standing grows bolder and feeds bigger raids.
 
 ## Code map
 
-- `js/game.js` — the sim: state, time, seasons, morale, pathfinding, settler/raider AI, economy, the Elder's counsel, save/load
+- `js/main.js` — boot, fixed-step loop, debug hooks (`window.G`, `ff(minutes)`)
+- `js/state.js` — the global run-state singleton `G` + tile helpers
+- `js/game.js` — tick orchestration, building/trade/objectives, the Elder's counsel; also re-exports most sim APIs
+- `js/data.js` — all content/balance tables (tiles, builds, civs, traits, perks, raiders, seasons, objectives, tips)
+- `js/settlers.js` — settler AI, roles, housing, combat vs raiders
+- `js/raiders.js` — raider archetype brains, raid composition/spawning
 - `js/world.js` — overworld generation, scouting, expeditions
-- `js/meta.js` — persistent legacy points, perks, lifetime records
-- `js/screens.js` — every screen and modal, declarative widgets over the cell buffer
-- `js/mapdraw.js` — the classic ASCII world renderer + shared map UI helpers
-- `js/tiles.js` — the sprite mode: procedural pixel-art atlas + lighting
-- `js/gfx.js` — the compositor: one character-cell buffer over a canvas
-- `js/portrait.js` — pixel-art elder portraits for the advisor window
-- `js/mobile.js` — the phone landing page, drawn with the game's own art
-- `js/gamepad.js` — Gamepad API polling mapped onto the shared key handler
-- `js/ui.js` / `js/main.js` — screen stack, input routing, fixed-step loop
-- `js/map.js`, `js/data.js`, `js/rng.js` — mapgen, content tables, RNG
+- `js/map.js` — local map generation · `js/path.js` — A*-ish pathfinding · `js/rng.js` — RNG
+- `js/save.js` — versioned save/load + migration · `js/meta.js` — legacy points/perks (persistent)
+- `js/seasons.js`, `js/fire.js`, `js/forecasts.js`, `js/journal.js`, `js/onboard.js`, `js/dawn.js`, `js/run-end.js`, `js/structures.js` — focused sim helpers
+- `js/ui.js` — screen stack, widget hit-testing, DOM input · `js/ui/menu.js` — reusable list-menu screen
+- `js/screens.js` — every screen and modal (game, world, menus, sidebar)
+- `js/gfx.js` — character-cell compositor over one canvas · `js/mapdraw.js` — ASCII renderer · `js/tiles.js` — pixel-sprite renderer + lighting · `js/glyph.js`, `js/portrait.js` — small drawing helpers
+- `js/gamepad.js` — Gamepad API → virtual keys · `js/mobile.js` — phone landing page
 
 Debug console: `G` is the game state, `ff(minutes)` fast-forwards the sim,
 `GAME`/`WORLD`/`META_M` expose the modules.
