@@ -10,9 +10,11 @@ vi.stubGlobal('localStorage', {
 vi.stubGlobal('performance', { now: () => 1000 });
 
 const { G, makeState } = await import('../js/state.js');
-const { settlerActive, cycleRole, settlersAvailable } = await import('../js/settlers.js');
+const { settlerActive, cycleRole, settlersAvailable, homeAtDusk } = await import('../js/settlers.js');
 const { save, loadGame, hasSave, clearSave } = await import('../js/save.js');
 const { partyPower } = await import('../js/world.js');
+const { igniteBeacon, elderCounsel } = await import('../js/game.js');
+const { OBJECTIVES } = await import('../js/data.js');
 
 describe('settlerActive', () => {
   it('rejects away and downed settlers', () => {
@@ -61,6 +63,76 @@ describe('save/load', () => {
     G.day = 99;
     expect(loadGame()).toBe(true);
     expect(G.day).toBe(5);
+  });
+});
+
+describe('homeAtDusk', () => {
+  beforeEach(() => {
+    Object.assign(G, makeState());
+    G.tiles = new Array(140 * 96).fill(null).map(() => ({ t: 'grass', walk: true }));
+  });
+
+  it('counts guards staying home when party launches', () => {
+    G.settlers = [
+      { id: 1, role: 'guard', away: false, downed: false },
+      { id: 2, role: 'guard', away: false, downed: false },
+      { id: 3, role: 'worker', away: false, downed: false },
+    ];
+    expect(homeAtDusk([2]).guards).toBe(1);
+    expect(homeAtDusk([2]).others).toBe(1);
+  });
+
+  it('excludes settlers already on expedition', () => {
+    G.settlers = [
+      { id: 1, role: 'guard', away: false, downed: false },
+      { id: 2, role: 'worker', away: false, downed: false },
+    ];
+    G.expeditions = [{ ids: [1], party: [], phase: 'out', t: 100, total: 100 }];
+    expect(homeAtDusk().guards).toBe(0);
+    expect(homeAtDusk().total).toBe(1);
+  });
+});
+
+describe('igniteBeacon', () => {
+  beforeEach(() => {
+    Object.assign(G, makeState());
+    G.tiles = new Array(140 * 96).fill(null).map(() => ({ t: 'grass', walk: true }));
+    G.tiles[0] = { t: 'beacon', walk: false, hp: 200 };
+    G.day = 10;
+    G.raidNext = 12;
+  });
+
+  it('does not ignite without a built beacon', () => {
+    G.tiles[0] = { t: 'grass' };
+    expect(igniteBeacon()).toBe(false);
+    expect(G.beaconDay).toBe(0);
+  });
+
+  it('lights beacon and pulls raid forward', () => {
+    expect(igniteBeacon()).toBe(true);
+    expect(G.beaconDay).toBe(10);
+    expect(G.raidNext).toBe(11);
+  });
+});
+
+describe('elderCounsel objectives', () => {
+  beforeEach(() => {
+    Object.assign(G, makeState());
+    G.tiles = new Array(140 * 96).fill(null).map(() => ({ t: 'grass', walk: true }));
+    G.civ = 'hearth';
+  });
+
+  it('speaks tutorial objectives before first raid completes', () => {
+    G.objIdx = OBJECTIVES.findIndex(o => o.id === 'raid');
+    G.stats.raids = 0;
+    expect(elderCounsel().text).toContain('Survive a raid');
+  });
+
+  it('stops speaking objectives after first raid', () => {
+    G.objIdx = OBJECTIVES.findIndex(o => o.id === 'raid') + 1;
+    G.stats.raids = 1;
+    G.morale = 65;
+    expect(elderCounsel().text).not.toContain('Send a party');
   });
 });
 

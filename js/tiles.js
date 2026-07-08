@@ -290,6 +290,22 @@ function beaconSprite(frame) {
   });
 }
 
+function beaconUnlitSprite() {
+  return mk(g => {
+    g.fillStyle = '#54544f';
+    g.fillRect(1, 15, 9, 2);
+    g.fillStyle = '#6f6f6a';
+    g.fillRect(2, 13, 7, 2);
+    g.fillStyle = '#4a3520';
+    g.fillRect(3, 8, 5, 5);
+    g.fillRect(2, 10, 7, 2);
+    g.fillStyle = '#5a5048';
+    g.fillRect(4, 5, 3, 4);
+    g.fillStyle = '#8a94a2';
+    g.fillRect(5, 4, 1, 1);
+  });
+}
+
 function person({ shirt, shirtDark, hood = null, pack = false, weapon = false, torch = false, crest = false, lying = false, skin = '#e8c09a', hair = '#3a2a1a' }) {
   return mk(g => {
     if (lying) { g.translate(5.5, 9.5); g.rotate(Math.PI / 2); g.translate(-5.5, -9.5); }
@@ -340,6 +356,7 @@ function buildAtlas() {
     workshop: workshop(),
     kitchen: kitchen(),
     beacon: [beaconSprite(0), beaconSprite(1), beaconSprite(2)],
+    beaconUnlit: beaconUnlitSprite(),
     flame: [flame(0), flame(1), flame(2)],
     crack: crack(),
     settler: {
@@ -387,7 +404,7 @@ function sprite(a, t, x, y, f) {
     case 'cabin': return a.cabin;
     case 'longhouse': return a.longhouse;
     case 'campfire': return a.campfire[(f >> 2) % 3];
-    case 'beacon': return a.beacon[(f >> 2) % 3];
+    case 'beacon': return G.beaconDay ? a.beacon[(f >> 2) % 3] : a.beaconUnlit;
     case 'post': return a.post;
     case 'trap': return a.trap;
     case 'workshop': return a.workshop;
@@ -490,7 +507,7 @@ export function drawMapTiles(ctx, f) {
     ctx.globalCompositeOperation = 'lighter';
     for (let sy = 0; sy < VIEW_H; sy++) for (let sx = 0; sx < VIEW_W; sx++) {
       const tl = tileAt(cam.x + sx, cam.y + sy);
-      const lit = tl.t === 'campfire' || tl.t === 'beacon' || tl.burning;
+      const lit = tl.t === 'campfire' || (tl.t === 'beacon' && G.beaconDay) || tl.burning;
       if (!lit) continue;
       const cx = sx * CW + CW / 2, cy = sy * CH + CH / 2;
       const rad = CW * (tl.t === 'beacon' ? 9 : 5);

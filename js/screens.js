@@ -3,10 +3,10 @@
 // clicking, focus, and drawing always agree.
 import {
   G, tileAt, inMap, timeStr, communeTier, hasSave, loadGame, newGame, save,
-  adjustedOffer, doTrade, tryPlaceBuild, cancelAt, queueCraft, unqueueCraft, cycleRole, settlerActive, settlersAvailable,
+  adjustedOffer, doTrade, tryPlaceBuild, cancelAt, queueCraft, unqueueCraft, cycleRole, settlerActive, settlersAvailable, homeAtDusk,
   notice, tip, centerCam, season, isWinter, daysToWinter, moraleLabel, traitName, housingCap,
   selBounds, selectionInfo, assignArea, clearAreaPlans,
-  tonightInfo, foodInfo, elderCounsel, toggleAlarm, moraleWhy, recruitEligible,
+  tonightInfo, foodInfo, elderCounsel, toggleAlarm, moraleWhy, recruitEligible, igniteBeacon,
 } from './game.js';
 import {
   MAP_W, MAP_H, VIEW_W, VIEW_H, CELL_W, CELL_H, T, BUILDS, BUILD_TABS, CRAFTS, COST_ABBR, ROLE_COLORS, ROLE_LETTER,
@@ -259,6 +259,7 @@ function paintCell(x, y, isDrag) {
 function clickInteract(x, y) {
   if (G.trader && G.trader.x === x && G.trader.y === y) { push(makeTradeModal()); return true; }
   if (tileAt(x, y).t === 'workshop') { push(makeWorkshopModal()); return true; }
+  if (tileAt(x, y).t === 'beacon' && !G.beaconDay) { push(makeBeaconModal()); return true; }
   const s = G.settlers.find(s => settlerActive(s) && s.x === x && s.y === y);
   if (s) { cycleRole(s); return true; }
   return false;
@@ -483,6 +484,8 @@ export function makeGameScreen() {
       if (G.beaconDay) {
         const hold = Math.max(0, G.beaconDay + 3 - G.day);
         str(SB_X, y++, `☼ BEACON — hold ${hold}d more`, (f >> 3) % 2 ? '#ffe060' : '#b09030');
+      } else if (G.tiles.some(tl => tl.t === 'beacon')) {
+        str(SB_X, y++, '☼ BEACON ready — click to light', '#c8a0e8');
       }
       // the elder's window: a framed portrait whose face carries the mood
       const el = elderCounsel();
@@ -714,11 +717,12 @@ function makePartyModal(locIdx) {
   const avail = settlersAvailable;
   const bw = 52;
   const x0 = ((GRID_W - bw) / 2) | 0;
+  const extraRows = 4; // garrison + risk lines
   const scr = {
     id: 'party', modal: true, focus: avail().length, // focus starts on LAUNCH
     widgets() {
       const a = avail();
-      const bh = a.length + 7;
+      const bh = a.length + 5 + extraRows;
       const y0 = ((GRID_H - bh) / 2) | 0;
       const ws = a.map((s, i) => ({
         rect: { x: x0, y: y0 + 2 + i, w: bw, h: 1 },
@@ -757,7 +761,7 @@ function makePartyModal(locIdx) {
     draw(f) {
       const loc = G.world.locs[locIdx];
       const a = avail();
-      const bh = a.length + 7;
+      const bh = a.length + 5 + extraRows;
       const y0 = ((GRID_H - bh) / 2) | 0;
       fillBg(x0, y0, bw, bh, '#141824');
       str(x0 + 1, y0, `SEND PARTY → ${loc.name}`, '#ffd860', '#141824');
@@ -766,6 +770,15 @@ function makePartyModal(locIdx) {
       const members = a.filter(s => sel.has(s.id));
       const pw = Math.round(partyPower(members));
       const risk = members.length ? riskLabel(pw, loc) : { label: '—', fg: '#8a94a2' };
+      const garrison = homeAtDusk(members.map(s => s.id));
+      const tn = tonightInfo();
+      const garrisonFg = tn.urgent && garrison.guards === 0 ? '#ff5040' : '#9ac0d8';
+      str(x0 + 1, y0 + bh - 6, `Home at dusk: ${garrison.guards} guard${garrison.guards === 1 ? '' : 's'}, ${garrison.others} other${garrison.others === 1 ? '' : 's'}`, garrisonFg, '#141824');
+      if (tn.urgent && garrison.guards === 0) {
+        str(x0 + 1, y0 + bh - 5, '⚠ raid tonight — no guards in camp!', '#ff5040', '#141824');
+      } else if (tn.urgent) {
+        str(x0 + 1, y0 + bh - 5, tn.label.slice(0, bw - 2), tn.fg, '#141824');
+      }
       if (members.length === 1) {
         str(x0 + 1, y0 + bh - 4, '⚑ one rider = SCOUT: fast, safe, reveals danger', '#9ac0d8', '#141824');
         str(x0 + 1, y0 + bh - 3, 'no assault will be made', '#6a7484', '#141824');
@@ -853,6 +866,30 @@ function makeOrdersMenu(b, info) {
 }
 
 // Production orders live on the building: click a workshop to queue work.
+function makeBeaconModal() {
+  const bw = 50;
+  const x0 = ((GRID_W - bw) / 2) | 0;
+  const bh = 11;
+  const y0 = ((GRID_H - bh) / 2) | 0;
+  const tn = tonightInfo();
+  const items = [
+    { label: () => 'Ignite the Beacon', fg: '#ffe060', act: () => { if (igniteBeacon()) pop(); } },
+    { label: () => 'Not yet', fg: '#8a94a2', act: () => pop() },
+  ];
+  return makeListScreen({
+    id: 'beacon', items, x0, y0: y0 + 5, w: bw, rowH: 2, pausesSim: true,
+    keymapExtra: { Escape: () => pop() },
+    drawChrome() {
+      fillBg(x0, y0, bw, bh, '#1a140a');
+      str(x0 + 2, y0 + 1, '☼ LIGHT THE BEACON?', '#ffe060', '#1a140a');
+      str(x0 + 2, y0 + 2, 'Every eye for miles will see the flame.', '#c8c2b0', '#1a140a');
+      str(x0 + 2, y0 + 3, 'A raid comes soon; raids hit harder (+2).', '#e0a040', '#1a140a');
+      str(x0 + 2, y0 + 4, 'Hold the commune 3 days to ascend.', '#c8c2b0', '#1a140a');
+      if (tn.urgent) str(x0 + 2, y0 + 5, tn.label.slice(0, bw - 4), '#ff5040', '#1a140a');
+    },
+  });
+}
+
 function makeWorkshopModal() {
   const x0 = 4, y0 = 4, w = 44;
   const bh = CRAFTS.length + 6;

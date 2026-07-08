@@ -17,7 +17,7 @@ export { communeFallen, communeAscended } from './run-end.js';
 export { tip } from './onboard.js';
 export {
   makeSettler, traitName, toggleAlarm, releaseTask, insideHouse, housingCap, woundSettler,
-  settlerActive, settlersPresent, settlersAvailable, cycleRole, tickSettlers,
+  settlerActive, settlersPresent, settlersAvailable, homeAtDusk, cycleRole, tickSettlers,
 } from './settlers.js';
 export { spawnRaid, tickRaiders } from './raiders.js';
 export { ignite } from './fire.js';
@@ -176,6 +176,21 @@ function countDamaged() {
   return dmgCache.val;
 }
 
+// Elder speaks tutorial objectives only through the first raid; sidebar keeps the chain.
+const ELDER_OBJECTIVE_LIMIT = OBJECTIVES.findIndex(o => o.id === 'raid');
+
+export function igniteBeacon() {
+  if (G.beaconDay) return false;
+  if (!G.tiles.some(tl => tl.t === 'beacon')) { notice('Build the Beacon first'); return false; }
+  G.beaconDay = G.day;
+  bumpMorale(20, 'the Beacon lit');
+  G.raidNext = Math.min(G.raidNext, G.day + 1);
+  addLog('☼ THE BEACON IS LIT! Every eye for miles turns this way.', '#ffe060');
+  addLog('Raids intensify (+2) — hold the commune 3 days for victory.', '#ffe060');
+  tip('beacon');
+  return true;
+}
+
 const elderCache = { stamp: -1, val: null };
 export function elderCounsel() {
   const stamp = G.day * 1440 + G.min;
@@ -188,7 +203,7 @@ export function elderCounsel() {
     () => G.raidActive && mk(G.raidIsHorde ? 'Fell the warlord and the horde breaks!' : 'Hold the line! Guards, to the walls!', 'alarm'),
     () => { const s = G.settlers.find(x => x.starving && settlerActive(x)); return s && mk(`${s.name} is starving. Harvest, cook, or trade — now.`, 'alarm'); },
     () => {
-      if (G.objIdx >= OBJECTIVES.length) return null;
+      if (G.objIdx >= OBJECTIVES.length || G.objIdx > ELDER_OBJECTIVE_LIMIT) return null;
       const o = OBJECTIVES[G.objIdx];
       return mk(`${o.text} — ${o.hint}`, tonightInfo().urgent ? 'wary' : 'calm', o.prog ? o.prog(G) : null);
     },
@@ -215,6 +230,8 @@ export function elderCounsel() {
       return camp && G.day >= 6 && mk(`${camp.name} grows bolder each day it stands. Burn it out.`, 'wary');
     },
     () => { const dmg = countDamaged(); return dmg.total >= 3 && mk(`${dmg.total} structures bear scars. The crews will mend them.`, 'calm'); },
+    () => communeTier() >= 3 && !G.beaconDay && G.tiles.some(tl => tl.t === 'beacon')
+      && mk('The Beacon awaits your word — click it when we are ready for what follows.', 'wary'),
     () => communeTier() >= 3 && !G.beaconDay && !G.tiles.some(tl => tl.t === 'beacon' || (tl.build && tl.build.id === 'beacon'))
       && mk('We could raise the Beacon — and end this in light.', 'calm'),
   ];

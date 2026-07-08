@@ -14,6 +14,14 @@ export const settlerActive = (s) => !s.away && !s.downed;
 export const settlersPresent = () => G.settlers.filter(settlerActive);
 export const settlersAvailable = () => settlersPresent();
 
+// Who stays in camp at dusk if the selected party launches now.
+export function homeAtDusk(excludeIds = []) {
+  const away = new Set([...G.expeditions.flatMap(e => e.ids), ...excludeIds]);
+  const home = G.settlers.filter(s => settlerActive(s) && !away.has(s.id));
+  const guards = home.filter(s => s.role === 'guard').length;
+  return { guards, others: home.length - guards, total: home.length };
+}
+
 // ---------------------------------------------------------------- settlers
 export function makeSettler(x, y, role) {
   const avail = NAMES.filter(n => !G.usedNames.has(n));
@@ -240,12 +248,8 @@ function completeTask(s, t) {
     if (HOUSES[def.id]) G.stats.bedsBuilt++; // any roof raised counts
     if (def.id === 'wall_w' || def.id === 'wall_s' || def.id === 'door') G.stats.wallsBuilt++;
     if (def.id === 'beacon') {
-      G.beaconDay = G.day;
-      bumpMorale(20, 'the Beacon lit');
-      G.raidNext = Math.min(G.raidNext, G.day + 1);
-      addLog('☼ THE BEACON IS LIT! Every eye for miles turns this way.', '#ffe060');
-      addLog('Hold the commune for 3 days and your story ends in triumph.', '#ffe060');
-      tip('beacon');
+      addLog('☼ The Beacon stands ready — click it when you mean to light it.', '#c8a0e8');
+      tip('beaconReady');
     }
     if (!T[def.id].walk) nudgeOff(t.x, t.y);
   }

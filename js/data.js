@@ -234,7 +234,7 @@ export const OBJECTIVES = [
   { id: 'tier3', text: 'Grow to 9 settlers', hint: 'stone walls unlock', prog: g => [Math.min(9, g.settlers.length), 9], check: g => g.settlers.length >= 9, legacy: 1 },
   { id: 'day12', text: 'Survive to Day 12', hint: 'the raids grow bolder', prog: g => [Math.min(12, g.day), 12], check: g => g.day >= 12, legacy: 2 },
   { id: 'winter1', text: 'Survive first winter', hint: 'stockpile food by day 16', check: g => (g.stats.winters || 0) >= 1, legacy: 2 },
-  { id: 'beacon', text: 'Light the Beacon', hint: 'b → WORKS b · hold 3 days', check: g => !!g.beaconDay, legacy: 3 },
+  { id: 'beacon', text: 'Light the Beacon', hint: 'click beacon · confirm · hold 3 days', check: g => !!g.beaconDay, legacy: 3 },
 ];
 
 // One-time contextual tips (seen-set persists in localStorage).
@@ -257,6 +257,7 @@ export const TIPS = {
   downed: 'A settler is DOWN — alive, but helpless where they fell. Guard them while they crawl to a bed; another blow will be the end.',
   horde: 'A HORDE gathers under a warlord. This is no common raid: every spear, trap and wall matters. Fell the warlord and the rest will break.',
   scout: 'A party of ONE travels as a scout: fast, no assault, and they bring back the site’s true danger. Scout before you commit a war party.',
+  beaconReady: 'The Beacon is built but unlit. Click it on the map when you are ready — lighting it draws every eye for miles, forces a raid soon, and raids hit harder (+2) until you hold 3 days.',
   beacon: 'The Beacon burns! Every eye for miles sees it — hold the commune for 3 days against what comes, and your story ends in triumph.',
 };
 

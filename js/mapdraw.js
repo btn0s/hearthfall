@@ -24,7 +24,8 @@ export function drawWorldAscii(f) {
     if (winter && WINTER_FG[tl.t]) { fg = WINTER_FG[tl.t].fg; bg = WINTER_FG[tl.t].bg || bg; }
     if (tl.t === 'tree') ch = ((x * 7 + y * 11) % 3 === 0) ? '♣' : '♠';
     if (tl.t === 'water') ch = ((x + y + (f >> 4)) % 2) ? '≈' : '~';
-    if (tl.t === 'campfire' || tl.t === 'beacon') fg = ['#ff9030', '#ffc040', '#e06020'][(f >> 2) % 3];
+    if (tl.t === 'campfire') fg = ['#ff9030', '#ffc040', '#e06020'][(f >> 2) % 3];
+    if (tl.t === 'beacon') fg = G.beaconDay ? ['#ff9030', '#ffc040', '#e06020'][(f >> 2) % 3] : '#8a94a2';
     if (tl.t === 'farm') {
       const g = tl.growth || 0;
       if (g >= 100) { ch = 'Ψ'; fg = '#e8d060'; }
@@ -98,6 +99,7 @@ export function inspectText() {
   if (tl.desig === 'fish') parts.push(tl.fishCd > 0 ? 'fishing spot (resting)' : 'fishing spot');
   else if (tl.desig) parts.push(`marked: ${tl.desig}`);
   if (tl.t === 'workshop') parts.push(G.craftQueue.length ? `orders: ${G.craftQueue.length} (click)` : 'click for orders');
+  if (tl.t === 'beacon' && !G.beaconDay) parts.push('unlit (click to ignite)');
   if (G.trader && G.trader.x === x && G.trader.y === y) parts.push('☺ trader (e to trade)');
   for (const s of G.settlers) {
     if (!s.away && s.x === x && s.y === y) {
