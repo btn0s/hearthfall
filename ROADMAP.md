@@ -96,7 +96,7 @@ with it.
 |----|------|--------|-------|
 | **P1-5** | **Split `screens.js`** (still 1,099 lines — layout + input + direct `G` mutation interleaved). Continue the `js/ui/` extraction (`ui/menu.js` is the pattern); single-source the modal box math duplicated between `widgets()`/`draw()` (the P5-3 residual) as each modal moves. | L | Plan 009. Land before HP-4 and HP-8 (the two biggest new-UI items). |
 | **P0-4** | **Keyboard/pad path to the morale "why"** — `moraleWhy()` is still mouse-only (`screens.js:304`); missed by plan 002's batch. | S | Folded into plan 026 (readability pass) — plan 009 is strictly zero-behavior-change. |
-| **P1-6** | **Untangle the `game.js` barrel** — re-exports ~38 symbols from 12 modules (`game.js:10-24`); view modules import `G` inconsistently. Direct imports; `game.js` stays the tick loop. | M | Mechanical; typecheck catches breakage. Natural follow-on to P1-5. |
+| **P1-6** | **Untangle the `game.js` barrel** — re-exports 47 symbols from 12 modules (`game.js:10-24`); view modules import `G` inconsistently. Direct imports; `game.js` stays the tick loop. | M | Plan 022. Mechanical; typecheck catches breakage. Natural follow-on to P1-5. |
 | **P1-7** | **Dedupe renderer logic** — crop stages (`tiles.js:125` vs `mapdraw.js`), animation phases, scar thresholds reimplemented in both renderers; ASCII fishing-mark color gap. | M | |
 | **P1-8** | **Job-scan performance** — `findJob` (`settlers.js:160`) walks all tiles per idle settler; `housingCap`/`claimBed` (`settlers.js:87,133`) full-scan. Actionable-tile index + house list. | M | Before any bigger-map/population ambitions. |
 | **P1-9** | **Renderer idle cost** — full repaint every rAF frame even paused; per-frame radial gradient at night (`tiles.js:514`). Dirty-flag + prebuilt gradients. | M | Lowest priority; invisible on desktop. |
@@ -175,33 +175,37 @@ P5-5 shipped in plan 002.)
 
 Plans execute **sequentially on main** — no feature branches. Every plan ends
 in a commit checkpoint with all three gates green (`pnpm check`, `pnpm lint`,
-`pnpm test`); a staged plan may make one checkpoint per stage. The order is a
-topological sort of the dependency graph, architecture before content:
+`pnpm test`); a staged plan may make one checkpoint per stage. The order below
+is numeric with one exception — **plan 020 (the `js/beats.js` deck floor) lands
+before plans 013 and 021, its deck consumers.** Full dependency graph and the
+cross-plan coordination seams (SAVE_VERSION sequencing, the legacy-perks
+reconciliation, the open §6 labor-invariant test) live in
+[plans/README.md](plans/README.md). Architecture before content:
 
 ```
  009 screens split (P1-5, + P5-3 residual)
  010 campaign store (HP-1)
  011 menace + scouting report (HP-5)
  012 cast v2 (HP-2)
- 013 arrivals as decisions (HP-3)
- 014 the torchbearer (HP-4)
  015 the sapper + counterplay pricing (HP-6)
  016 endings: Last Stand & the Torch (HP-7)
- 017 the campaign layer (HP-8)
  018 the Beacon as priced wager (HP-9)
  019 winter for real (HP-10)
  020 supporting systems (trader memory · proc floor · first-loss unlock)
- 021 ambitions v0 + event deck v0
+ 013 arrivals as decisions (HP-3)          ← after 020 (registers on its deck floor)
+ 021 ambitions v0 + event deck v0          ← after 020
+ 014 the torchbearer (HP-4)
+ 017 the campaign layer (HP-8)
  ──► HP0 exit playtest (the gate everything past this waits on)
- 022–025 enablement stragglers (P1-6..P1-9 — pull earlier if one blocks you)
- 026–028 reach (P5-1 + P0-4 · P5-2 · P5-4)
+ 022 barrel · 023 renderer dedup · 024 job-scan · 026 readability (P1-6..8, P5-1)
+ 025 renderer idle (after 023) · 027 screen-reader · 028 touch spike
 ```
 
-Conceptually there are still three tracks (persistence HP-1→3→7→8, threat
-HP-5→6/9/10, cast/dusk HP-2→4) — the linear order above interleaves them
-without breaking any dependency, so you can always just execute the next
-plan. The playtest gate (open now) runs alongside; it steers tuning, not
-architecture.
+The order is numeric except 013/021 wait for 020 (their deck floor). It's one
+valid topological sort of three tracks — persistence (010→016→017), threat
+(011→015/018/019), cast/dusk (012→013/014) — so you can always just execute
+the next line. The playtest gate (open now) runs alongside; it steers tuning,
+not architecture.
 
 ## Research sources (abridged)
 
