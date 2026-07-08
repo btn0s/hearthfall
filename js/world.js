@@ -86,13 +86,14 @@ export function riskLabel(power, loc) {
 
 export function startExpedition(locIdx, ids) {
   const loc = G.world.locs[locIdx];
-  const members = G.settlers.filter(s => ids.includes(s.id) && !s.downed);
+  const members = G.settlers.filter(s => ids.includes(s.id) && !s.away && !s.downed);
   if (!loc || loc.cleared || !members.length) return false;
   for (const s of members) { s.away = true; s.sleeping = false; releaseTask(s); }
   G.stats.expeditions++;
   const scout = members.length === 1;
   const travel = Math.max(30, Math.round(loc.travel * (scout ? 0.7 : 1))); // one rider moves fast
-  G.expeditions.push({ locIdx, ids: members.map(s => s.id), phase: 'out', t: travel, total: travel, loot: null, scout });
+  const power = partyPower(members);
+  G.expeditions.push({ locIdx, ids: members.map(s => s.id), phase: 'out', t: travel, total: travel, loot: null, scout, power });
   if (scout) addLog(`⚑ ${members[0].name} rides out alone to scout ${loc.name}.`, '#9ac0d8');
   else addLog(`⚑ ${members.map(s => s.name).join(', ')} set out for ${loc.name} (${((travel * 2) / 1440).toFixed(1)}d round trip).`, '#9ac0d8');
   return true;
@@ -124,10 +125,9 @@ function resolveExpedition(e, loc) {
   else if (ev < 0.27) { lootMult = 1.5; addLog(`⚑ The road was kind — ${loc.name} lay unwatched.`, '#8ad080'); }
   else if (ev < 0.35) { e.slow = true; }
 
-  const power = partyPower(members);
+  const power = e.power ?? partyPower(members);
   const danger = loc.diff * 2.6 * (0.8 + rnd() * 0.4) * dangerMult;
   const success = power >= danger;
-  loc.cleared = true;
   loc.scouted = true;
   const f = (success ? 1 : 0.3) * lootMult;
   const roll = (a, b) => Math.round(rint(a, b) * f);
@@ -140,6 +140,7 @@ function resolveExpedition(e, loc) {
   e.loot = loot;
 
   if (success) {
+    loc.cleared = true;
     G.stats.sites++;
     bumpMorale(4, 'victory abroad');
     addLog(`⚑ The party cleared ${loc.name}!`, '#8ad080');

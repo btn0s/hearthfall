@@ -4,8 +4,7 @@
 //
 // Mapping (standard layout):
 //   d-pad / left stick  move cursor · navigate menus
-//   A (0)               confirm / act — press to anchor a selection box,
-//                       stretch with the stick, press again for orders
+//   A (0)               confirm / act — edge-triggered (no repeat)
 //   B (1)               back / cancel
 //   X (2)               build menu
 //   Y (3)               world map
@@ -55,7 +54,7 @@ export function pollGamepad() {
   fire('down', b(13) || ly > 0.5, 'ArrowDown', now, true);
   fire('left', b(14) || lx < -0.5, 'ArrowLeft', now, true);
   fire('right', b(15) || lx > 0.5, 'ArrowRight', now, true);
-  fire('a', b(0), 'Enter', now, true); // held A + stick = drag painting
+  fire('a', b(0), 'Enter', now, false);
   fire('b', b(1), 'Escape', now, false);
   fire('x', b(2), 'b', now, false);
   fire('y', b(3), 'w', now, false);

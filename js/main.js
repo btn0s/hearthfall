@@ -1,4 +1,4 @@
-import { G, tickGame } from './game.js';
+import { G, tickGame, save } from './game.js';
 import { tickWorld, worldDawn } from './world.js';
 import * as gfx from './gfx.js';
 import { stack, push, replaceAll, inStack, setupInput, renderFrame } from './ui.js';
@@ -11,14 +11,17 @@ setupInput(canvas);
 setupGamepad();
 replaceAll(makeMenuScreen());
 
+function advanceMinute() {
+  const ev = tickGame();
+  tickWorld();
+  if (ev && ev.dawn) { worldDawn(); save(); }
+  return ev;
+}
+
 // debug / test hooks
 window.G = G;
 window.ff = (mins) => { // fast-forward n game-minutes
-  for (let i = 0; i < mins && !G.gameOver; i++) {
-    const ev = tickGame();
-    tickWorld();
-    if (ev && ev.dawn) worldDawn();
-  }
+  for (let i = 0; i < mins && !G.gameOver; i++) advanceMinute();
 };
 import('./game.js').then(m => { window.GAME = m; });
 import('./world.js').then(m => { window.WORLD = m; });
@@ -45,9 +48,7 @@ function frame(now) {
     let n = 0;
     while (acc >= step && n < 120) {
       acc -= step;
-      const ev = tickGame();
-      tickWorld();
-      if (ev && ev.dawn) worldDawn();
+      advanceMinute();
       n++;
     }
     if (n >= 120) acc = 0;

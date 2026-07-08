@@ -78,6 +78,7 @@ function drawTip() {
 export function beginRun(civId) {
   newGame(civId);
   genWorld();
+  save();
   replaceAll(makeGameScreen());
   push(makeIntroModal());
 }
