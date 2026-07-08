@@ -470,8 +470,11 @@ unversioned; saves are deleted at run end — the campaign store is new
 architecture); **seasons currently embody the anti-pattern** (numbers-only,
 and winter is the *safest* season); dawn is a log, not a reckoning; ambitions
 don't exist; morale is one global scalar; weapons are a pooled index; there
-is no draft, no arrivals-as-choices, no endings, no embodied control. The
-roadmap (ROADMAP.md) remains the route; where it and this document disagree
-(notably P3-1's shape and the meta redesign), **this document is the
-destination** and the roadmap needs a revision pass after the v1-playable
-scope here is accepted.
+is no draft, no arrivals-as-choices, no endings, no embodied control.
+
+*Since the feasibility audit, the enablement work has landed (2026-07-08):
+characterization tests over the money/combat/raid paths, CI, and a single
+`BALANCE` tuning table — the prerequisites §10's v1 playable assumed. The
+roadmap (ROADMAP.md) was revised against this document on the same date; its
+**Milestone HP0** is the execution route for §10, item by item. Where the two
+documents disagree, **this document is the destination**.*

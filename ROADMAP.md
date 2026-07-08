@@ -1,149 +1,133 @@
 # HEARTHFALL Roadmap
 
-Written against commit `3ee106c` (2026-07-07). Produced by a full multi-agent audit
-(correctness, architecture/performance, UI/UX, game design) plus genre research on
-roguelite meta-progression and colony-sim pressure design. Every code claim below was
-verified against source; every design principle cites the game it comes from.
+Revised 2026-07-08 against commit `d177bfd` and **[GDD.md](GDD.md) v2**. The
+GDD is the destination; this roadmap is the route. The original audit roadmap
+(written at `3ee106c`, 2026-07-07) has been fully executed through its
+enablement phase — plans 001–008 are merged to main (see **Shipped**) — so
+this revision does two things: replaces the pre-campaign-flip North Star with
+one derived from GDD v2, and re-sequences what remains now that the safety
+net, tuning surface, and layout work exist.
 
-Each item has an ID for reference — the plan is to break items into detailed,
-self-contained execution plans one at a time. Effort: **S** = hours, **M** = a
-day-ish, **L** = multi-day. Verification gates for all code work: `pnpm check`,
-`pnpm lint`, `pnpm test` (all green today; keep them green).
-
----
-
-> **Note (2026-07-07, reconciled):** the design destination lives in
-> [GDD.md](GDD.md) (v2, survived four adversarial reviews). Its campaign flip
-> — *persistent band, disposable settlements* — reshaped this roadmap: the
-> old Phases 2–4 are replaced below by **Milestone HP0 (the Hypothesis
-> Playable)**, a direct translation of GDD §10, plus a post-HP0 backlog.
-> Phases 0–1 (bugs, tests, refactors, layout) are unchanged and still come
-> first.
-
-## North star — identity, USP, and the idea of fun
-
-**Identity.** HEARTHFALL is the *session-sized commune roguelike*: a 30–90
-minute run you start in a browser tab (or on the couch with a pad), keeping a
-dozen **named** people alive through nights with a **heartbeat** — day is
-agency, dusk is consequence, dawn is story — until the commune falls and feeds
-the next one's legacy, or you light the Beacon and *choose* to take the final
-exam.
-
-**USP** — the combination no genre neighbor offers: Against the Storm has
-session-structured colony runs but no combat heartbeat, no named-person
-stakes, no browser. RimWorld/DF have the people-stories inside 20-hour opaque
-sandboxes. They Are Billions has the wave rhythm with zero attachment. The
-wedge is **zero-install + session-sized + dusk-rhythm defense + named-people
-stakes + a player-invoked ending** (the Beacon — declare your own final exam —
-is already built and is the rarest mechanic here).
-
-**Idea of fun** — the loop feeling to protect: daylight = plans that matter,
-dusk = the line holds or breaks, dawn = who was wounded, who deserted, what
-the Elder says, death = investment in the next run. Fun dies four ways, and
-each maps to a pillar below.
-
-**The four pillars** (every non-enablement item must serve one):
-
-| # | Pillar | Fun dies when… | Served by |
-|---|--------|----------------|-----------|
-| I | **Dusk stays scary** | raids are solved (turtle-and-snipe, hard cap) | HP-5, HP-6, HP-9, HP-10 |
-| II | **People, not population** | settlers become interchangeable labor | HP-2, HP-3, HP-4 |
-| III | **Death feeds the next run** | legacy is just a shrinking shopping list | HP-1, HP-7, HP-8 |
-| IV | **Instant, anywhere** | install friction, broken pad, cramped screen | P0-1..P0-8, P1-10, P5-* |
-
-(GDD v2 sharpened pillars II and III into the campaign flip: the *band*
-persists across settlements — see GDD §2 P1–P8 for the full revised set.)
-
-Phases 0–1 are otherwise **enablement**: the safety net (tests, CI) and the
-tuning surface (balance table) that let Pillars I–III be executed aggressively
-without breaking the game. The cut test for any future item: *name its pillar
-or its enablement role, or cut it.* Applied to the current list, one item
-scores weakest — **P4-3 (workshop depth) is justified only as Pillar I**
-(an armor/defense axis that feeds dusk tension); if it drifts toward generic
-crafting content, cut it.
-
-The three README promises the code doesn't keep yet — "death feeds the next
-run" (legacy is currency-only, `meta.js`), "State of Decay community pressure"
-(one global morale scalar), and a challenge that holds (raids cap at ~10 into
-a 16-settler economy) — are Pillars III, II, and I respectively. The genre
-research prescriptions woven into Phases 2–4: meta spends on **options, not
-stats**; pressure scales on **visible player choices, not wealth**; raids vary
-by **vector, not just number**; death **pays out story**.
-
-**Convergence check.** After Phase 0 + P1-10 land (playable on pad, roomy on a
-real screen), run real playtests against the pillar list before building the
-HP0 milestone — the Odd Realm lesson (one-on-one player interviews were that
-solo dev's highest-leverage steering tool). HP0 itself ends in a second,
-sharper playtest gate (its exit test). When this section stabilizes, promote
-it and GDD §2 to a `PRODUCT.md` so future audits treat them as settled
-intent.
+IDs are stable across revisions: `P0-*`/`P1-*`/`P5-*` survive from the audit
+roadmap, `HP-*` is Milestone HP0 (GDD §10's v1 playable). Done items appear
+once in Shipped and nowhere else. Effort: **S** = hours, **M** = a day-ish,
+**L** = multi-day. Verification gates for all code work: `pnpm check`,
+`pnpm lint`, `pnpm test` (52 tests; CI enforces all three on push/PR).
+Detailed execution plans live in [plans/](plans/README.md).
 
 ---
 
-## Phase 0 — Stop the bleeding (bugs, parity, safety net)
+## North star (derived from GDD v2 §1–2)
 
-Small, high-confidence fixes plus the infrastructure that makes every later phase
-safe to execute. Do these first; most are hours each.
+**Identity.** HEARTHFALL is a **campaign of settlements**: you lead one small
+band of named, mortal, *aging* people from settlement to settlement across a
+darkening world. Each settlement is a run — 45–75 minutes, founded, defended
+night by night through the heartbeat (day = agency, dusk = consequence *you
+play through the torchbearer*, dawn = reckoning) — and is won (a Beacon lit,
+permanent light on the campaign map) or lost (survivors walk out; the dead
+don't). **The band persists; the settlements are the runs**; the chronicle of
+who these people were is the thing you actually build. And it starts
+instantly — a browser tab, or the couch with a pad.
+
+**USP.** The colony-sim × roguelite × wave-defense intersection is *occupied*
+(The Last Spell, Rise to Ruins, Age of Darkness, Cult of the Lamb — GDD §1).
+What's unclaimed is an **attachment-first** treatment of it, and the genre
+record is unanimous that attachment lives in what *persists across* the loop,
+never in what the loop consumes (Darkest Dungeon's roster, State of Decay's
+community, Hades' cast). That is the campaign flip, and everything in
+Milestone HP0 exists to test it. The delivery wedge stays alongside it:
+zero-install + session-sized + pad-ready, which no genre neighbor ships.
+
+**Pillars.** The pillars are GDD §2's eight — single source, not restated
+here: **P1** a band, not a colony · **P2** the heartbeat, and you are in it ·
+**P3** pressure is legible and tracks capacity · **P4** the exam is
+player-scheduled and priced honestly · **P5** continuity carries history,
+never stats · **P6** death is paid in memorial, not compensation · **P7**
+legible depth · **P8** endings are choices. Each ends in a falsifier; HP0's
+exit playtest is where the falsifiers get run for real. (This resolves the
+old roadmap's PRODUCT.md promotion note: the GDD *is* the settled-intent
+document now.)
+
+**Cut test** — every non-enablement item must name its GDD pillar or be cut:
+
+| GDD pillar | Served by |
+|---|---|
+| P1/P7 — band, legible depth | HP-2, HP-3 |
+| P2 — embodied dusk | HP-4 |
+| P3 — capacity-tracking pressure | HP-5, HP-6 |
+| P4 — the priced exam | HP-9 |
+| P5/P6 — continuity, memorial | HP-1, HP-8 |
+| P8 — endings as choices | HP-7 |
+| §7 — seasons flip verbs | HP-10 |
+| Delivery wedge (instant, anywhere) | P0-4, P5-1..P5-4 |
+
+Enablement (P1-5..P1-9) serves no pillar directly; it is the safety net and
+tuning surface that let the pillars be executed aggressively.
+
+**The playtest gate is open.** The audit roadmap's convergence check — after
+Phase 0 + the layout work, playtest before building HP0 — is due **now**: the
+game is pad-playable and decompressed. Run one-on-one player interviews (the
+Odd Realm method) against the pillar falsifiers. The verdict steers HP0's
+*tuning*, not its architecture — HP-1 and HP-5 are safe to start in parallel
+with it.
+
+---
+
+## Shipped (audit-roadmap enablement, plans 001–008, merged 2026-07-08)
+
+- **Phase 0 entire** (minus P0-4, below): controller build/demolish + alarm
+  binding (P0-1/2), Continue camera recenter (P0-3), modifier-key suppression
+  (P0-5), modal pause semantics (P0-6), pop-16 rescue cap (P0-7), numeric
+  percentile sort (P0-8), CI workflow (P0-9), AGENTS.md/CLAUDE.md (P0-10),
+  README code map (P0-11), wheel deltaMode (P5-5).
+- **The characterization net** (P1-1/2/3): money paths + save round-trip,
+  combat + economy tick, raids/pathing/expeditions — 52 tests across 7 files.
+- **P1-10, in revised form** — fit-to-window was **rejected by owner
+  decision: the fixed 100×45 / 1100×855 CRT container is part of the game's
+  identity.** The sidebar was decompressed inside it instead (viewport 70
+  cols, sidebar 28, more settler/minimap rows). *Treat the fixed CRT grid as
+  a design constant in all future UI work.*
+- **P1-4**: all sim tuning hoisted into `js/balance.js` (`BALANCE`) — the
+  single tuning surface every HP0 item flows through.
+
+## Enablement backlog
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
-| **P0-1** | **Fix controller build/demolish** — A emits `Paint` in BUILD mode but item selection only listens for `Enter`/`a–e` (`gamepad.js:57-58`, `screens.js:344-352`); demolish requires a non-drag press the pad never sends (`screens.js:254,397`). Controller cannot place a single building today. | S | README's "full controller support" is broken at the core loop. |
-| **P0-2** | **Give the pad the missing actions** — no binding for alarm `r`, trade `e`, minimap `n`, save-quit `Q` (`gamepad.js:60-68`). Alarm is the primary raid response. | S | Pair with P0-1; update README controller table. |
-| **P0-3** | **Fix Continue camera** — `cam` is excluded from saves (`save.js:16-18`) and load never re-centers, so Continue opens on empty top-left corner. | S | One-line fix: `centerCam(G.camp.x, G.camp.y)` after `loadGame()`. |
-| **P0-4** | **Keyboard-accessible morale "why"** — `moraleWhy()` is reachable only by mouse-clicking the bar (`screens.js:300-302`). Add a key + pad path. | S | |
-| **P0-5** | **Suppress game keys under Ctrl/Cmd/Alt** — `dispatchKey` forwards only shift (`ui.js:91-94`); Cmd+R rings the alarm while reloading. | S | |
-| **P0-6** | **Decide + unify modal pause semantics** — trade and workshop lack `pausesSim`; all six other modals have it (`screens.js:811-1066`). If the time pressure is intentional, surface it; otherwise add the flag. | S | Design decision needed, then trivial. |
-| **P0-7** | **Cap survivor rescues at pop 16** — `world.js:163-169` pushes a rescued settler with no `< 16` check; the tagalong branch has one. | S | |
-| **P0-8** | **Numeric sort in mapgen percentiles** — `pct()` uses default lexicographic sort on a Float32Array (`map.js:38`), skewing biome thresholds at the extremes. | S | `(a, b) => a - b`. |
-| **P0-9** | **CI workflow** — no `.github/`; nothing enforces the green `check`/`lint`/`test` gates on push/PR despite the README inviting PRs. | S | Node 20, pnpm frozen lockfile, three commands. |
-| **P0-10** | **AGENTS.md / CLAUDE.md** — capture the conventions every plan needs: `G` singleton model, screen-object contract (`ui.js:1-9`), per-minute cache pattern, verification commands, `ff()` debug hooks. | S | Multiplies the success rate of every later item. |
-| **P0-11** | **Fix the stale README code map** — it still says `game.js` holds pathfinding/AI/save-load that now live in 9 other modules; ~15 modules unlisted. | S | |
+| **P1-5** | **Split `screens.js`** (still 1,099 lines — layout + input + direct `G` mutation interleaved). Continue the `js/ui/` extraction (`ui/menu.js` is the pattern); single-source the modal box math duplicated between `widgets()`/`draw()` (the P5-3 residual) as each modal moves. | L | Plan 009. Land before HP-4 and HP-8 (the two biggest new-UI items). |
+| **P0-4** | **Keyboard/pad path to the morale "why"** — `moraleWhy()` is still mouse-only (`screens.js:304`); missed by plan 002's batch. | S | Folded into plan 026 (readability pass) — plan 009 is strictly zero-behavior-change. |
+| **P1-6** | **Untangle the `game.js` barrel** — re-exports ~38 symbols from 12 modules (`game.js:10-24`); view modules import `G` inconsistently. Direct imports; `game.js` stays the tick loop. | M | Mechanical; typecheck catches breakage. Natural follow-on to P1-5. |
+| **P1-7** | **Dedupe renderer logic** — crop stages (`tiles.js:125` vs `mapdraw.js`), animation phases, scar thresholds reimplemented in both renderers; ASCII fishing-mark color gap. | M | |
+| **P1-8** | **Job-scan performance** — `findJob` (`settlers.js:160`) walks all tiles per idle settler; `housingCap`/`claimBed` (`settlers.js:87,133`) full-scan. Actionable-tile index + house list. | M | Before any bigger-map/population ambitions. |
+| **P1-9** | **Renderer idle cost** — full repaint every rAF frame even paused; per-frame radial gradient at night (`tiles.js:514`). Dirty-flag + prebuilt gradients. | M | Lowest priority; invisible on desktop. |
 
-## Phase 1 — Characterization tests, then refactors
-
-The sim has exactly one test file. Lock down current behavior **before** touching
-architecture, then do the refactors that unblock balance and content work.
-
-| ID | Item | Effort | Notes |
-|----|------|--------|-------|
-| **P1-1** | **Characterization tests: the money paths** — `endRun` scoring/feat bonuses/ledger multiplier (`meta.js:50-71`), `buyPerk` guards, save/load round-trip incl. `usedNames` Set and v0→v1 `migrate()`. | M | Legacy points are the only cross-run currency; a regression corrupts every player's meta. Follow `test/boundaries.test.js` patterns (stubbed globals). |
-| **P1-2** | **Characterization tests: combat + economy tick** — `hitRaider`/`woundSettler`/down-vs-die coin flip, warlord horde-break; hunger→eat→starve chain and resource-decrement guards. | M | Stub `chance`/`rint`. These two loops are the game. |
-| **P1-3** | **Characterization tests: raids, pathing, run-end** — `spawnRaid` edge cases, `findPath` (walls, `noDoor`, null-on-boxed-in), `raidEstimate` invariants, expedition resolution, `communeFallen`/`Ascended` idempotence. | M | Completes the safety net for Phases 2–3 balance work. |
-| **P1-4** | **Extract balance constants into one tunable table** — hunger `0.075`, crop `0.23`, morale drift `0.0004`, work costs, raid timers etc. are inline across `game.js`/`settlers.js`/`raiders.js`. Hoist into a `BALANCE` block in `data.js` (or `balance.js`). | M | **Prerequisite for all Phase 2 tuning** and for difficulty modes/ascension later. Behavior-identical; tests from P1-1..3 prove it. |
-| **P1-5** | **Split `screens.js`** (1,099 lines, 25 functions — layout + input + direct `G` mutation interleaved). Continue the started-and-stalled `js/ui/` extraction (`ui/menu.js` is the pattern): peel modals, world screen, title screens, sidebar into files; route map mutations through `game.js` mutators. | L | Do after P1-1..3 exist. Biggest structural debt; every UI phase item lands in this code. |
-| **P1-6** | **Untangle the `game.js` barrel** — it re-exports ~40 symbols from 12 modules and re-imports some of the same names (`game.js:9-35`); view modules import `G` inconsistently (via barrel vs `state.js`). Pick direct imports, keep `game.js` as the tick loop. | M | Mechanical; typecheck catches breakage. |
-| **P1-7** | **Deduplicate renderer logic** — crop stages, water/tree/fire animation phases, scar thresholds reimplemented in both `mapdraw.js` and `tiles.js` (drift risk on every visual tune). Extract shared pure helpers. Include the ASCII fishing-designation color gap (`mapdraw.js:40` renders all marks identically). | M | |
-| **P1-8** | **Job-scan performance** — `findJob` walks all 13,440 tiles per idle settler (`settlers.js:159-189`); `claimBed`/`housingCap` full-scan too. Maintain an actionable-tile index + house list (the per-minute cache pattern at `settlers.js:114` is the established precedent). | M | Hottest sim cost; matters before bigger populations/maps ever happen. |
-| **P1-9** | **Renderer idle cost** (optional, lowest priority in phase) — full 4,500-cell repaint every rAF frame even paused; per-frame gradient allocation at night (`gfx.js:86-115`, `tiles.js:504-521`). Dirty-flag + prebuilt gradients. | M | Real but invisible on desktop; defer if Phase 2 beckons. |
-| **P1-10** | **Fixed-grid sidebar layout** *(user priority — schedule first among the Phase 1 refactors)* — keep the classic 100×45 CRT-aspect canvas (`gfx.js`, `style.css`); rebudget *within* the grid: slightly narrower map viewport, wider sidebar, compressed resource block, more settler/minimap rows. No window-driven scaling or dynamic cell size. | M | Promoted from Phase 5 on user feedback ("cramped, use the space better"). Do before P1-5 splits `screens.js`. |
-
-## Milestone HP0 — the Hypothesis Playable (replaces old Phases 2–4)
+## Milestone HP0 — the Hypothesis Playable
 
 Direct translation of GDD §10: the minimum build that tests the core
-hypothesis — *does a persistent, mortal, aging band whose settlements die make
-players found the next settlement?* Ordered by dependency; all tuning flows
-through the P1-4 balance table; the P1-1..3 test net and the P1-5 screens
-split should land first (HP-4 and HP-8 add substantial new UI).
+hypothesis — *does a persistent, mortal, aging band whose settlements die
+make players found the next settlement?* The prerequisites the audit roadmap
+demanded (test net, balance table) are **done**; only P1-5 remains as a
+recommended pre-landing for the two UI-heavy items. All tuning flows through
+`BALANCE`.
 
 | ID | Item | Effort | Depends on | GDD |
 |----|------|--------|------------|-----|
-| **HP-1** | **The campaign store** — versioned cross-run persistence (band members with name/trait/wants/scars/age, campaign map state, lit Beacons, ruins, unlocks). New module + `META` gains a version field (it has none — landmine); ending flows must write survivors *before* `clearSave()`. This is the architecture everything cross-run stands on. | M-L | P1-1 (save/meta tests) | §3, App A |
-| **HP-2** | **The cast, v2** — per-person **resolve** as 3 named bands (Steady/Fraying/Breaking; inputs at v1: food, sleep, deaths witnessed), visible **wants** (one each), **scars** (append-only, cross-campaign), **medic** role (4th), bonds/grudges as *display + resolve-on-partner-death only* (no adjacency/refusal teeth — the O(n²) bomb stays defused), breaks never mid-raid at v1. Global morale becomes a displayed aggregate. | L | P1-2 (settler tests), P1-4 | §5 |
-| **HP-3** | **Arrivals as decisions** — strangers at the gate shown as people (trait, want, age); accept = joins the *band* (campaign), decline has a visible cost. Low rate, event-weight. Replaces silent dawn recruiting. | M | HP-1, HP-2 | §5 |
-| **HP-4** | **The torchbearer** — dawn "who carries the torch tonight" choice; at dusk, direct control of that one mortal band member (move, rally, sortie, rescue-the-downed); during raids, pause = look only, commands flow through the torchbearer. The embodiment pillar (GDD P2) and the answer to "dusk is a cutscene." | L | HP-2; P1-5 recommended | §2 P2 |
-| **HP-5** | **Menace + the scouting report** — two visible cause-ledgers replacing the day-count formula (`forecasts.js:9-16`): Menace ceiling (days, firelight claimed, noise, camps standing) and capacity-tracking raid sizing (what they bother sending), with the published no-turtle-equilibrium inequality and the no-death-spiral guard. Firelight-as-claims term included. | M-L | P1-4 | §2 P3, §6 |
-| **HP-6** | **The sapper** + counterplay-matrix cost pass — the anti-turtle archetype (breaches doors/walls; defeats the sealed `noDoor` ring, `raiders.js:101-132`); defenses get priced against each other (space/labor/light). Slinger is explicitly vLater (new combat modality). | M | HP-5 | §6 |
-| **HP-7** | **Endings** — collapse becomes standing offers, player-paced: **Last Stand** (everything tonight; feats honored; EV strictly below a Beacon attempt) and **the Torch** (leave now; pick who walks out → written to the campaign store). Self-induced collapse forfeits feats (anti-farm invariant). | M-L | HP-1 | §2 P8, §9 |
-| **HP-8** | **The campaign layer** — wagon camp between settlements (tend wounded, spend legacy on options, pick next site, creed slot), campaign map v0 (site choice with visible quirk, lit Beacons persist, one canned your-ruins site), **aging** in simplest form (Green/Prime/Grey; Grey retire to the Chronicle). | L | HP-1, HP-7 | §3 |
-| **HP-9** | **The Beacon as priced wager** — each exam night previewed at dawn; fixed concealed-share of each night's budget (balance-table number); first-attempt concealment draws only from taught vectors. | M | HP-5 | §2 P4 |
-| **HP-10** | **Winter for real** — the one season verb-flip shipped fully at v1: desperate food-seeking raids (reversing `forecasts.js:11`'s winter *discount*) and the frozen river as a crossing — which requires the season-aware `walkable()` refactor (`state.js:31`), planned here, not hand-waved. Other seasons stay numeric until post-HP0. | M-L | HP-5 | §7 |
+| **HP-1** | **The campaign store** — versioned cross-run persistence (band members with name/trait/wants/scars/age, campaign map state, lit Beacons, ruins, unlocks). New module, versioned from day one; `META` gains the version field it still lacks; ending flows write survivors *before* `clearSave()`. The architecture everything cross-run stands on. | M-L | — (plan 010) | §3, App A |
+| **HP-2** | **The cast, v2** — per-person **resolve** as named bands (Steady/Fraying/Breaking; inputs at v1: food, sleep, deaths witnessed), visible **wants** (one each), **scars** (append-only, cross-campaign), **medic** role (4th), bonds/grudges as *display + resolve-on-partner-death only* (no adjacency/refusal teeth — the O(n²) bomb stays defused), breaks never mid-raid at v1. Global morale becomes a displayed aggregate. | L | — (plan 012) | §5 |
+| **HP-3** | **Arrivals as decisions** — strangers at the gate shown as people (trait, want, age); accept = joins the *band* (campaign), decline has a visible cost. Low rate, event-weight. Replaces silent dawn recruiting. | M | HP-1, HP-2 (plan 013) | §5 |
+| **HP-4** | **The torchbearer** — dawn "who carries the torch tonight"; at dusk, direct control of that one mortal band member (move, rally, sortie, rescue-the-downed); during raids, pause = look only, commands flow through the torchbearer. The embodiment pillar and the answer to "dusk is a cutscene." | L | HP-2; P1-5 first (plan 014) | §2 P2 |
+| **HP-5** | **Menace + the scouting report** — two visible cause-ledgers replacing the day-count sizing formula (`forecasts.js:7-19`, `BALANCE.raid`): Menace ceiling (days, firelight claimed, noise, camps standing) and capacity-tracking raid sizing, with the published no-turtle-equilibrium inequality as an executable test over `BALANCE` and the no-death-spiral guard. Firelight-as-claims included. | M-L | — (plan 011) | §2 P3, §6 |
+| **HP-6** | **The sapper** + counterplay-matrix cost pass — the anti-turtle archetype (breaches doors/walls; defeats the sealed `noDoor` ring, `raiders.js:102-133`); defenses priced against each other (space/labor/light). Slinger stays vLater. | M | HP-5 (plan 015) | §6 |
+| **HP-7** | **Endings** — collapse becomes standing offers, player-paced: **Last Stand** (everything tonight; feats honored; EV strictly below a Beacon attempt) and **the Torch** (leave now; pick who walks out → written to the campaign store). Self-induced collapse forfeits feats. | M-L | HP-1 (plan 016) | §2 P8, §9 |
+| **HP-8** | **The campaign layer** — wagon camp between settlements (tend wounded, spend legacy on options, pick next site, creed slot), campaign map v0 (site choice with visible quirk, lit Beacons persist, one canned your-ruins site), **aging** in simplest form (Green/Prime/Grey; Grey retire to the Chronicle). | L | HP-1, HP-7; P1-5 first (plan 017) | §3 |
+| **HP-9** | **The Beacon as priced wager** — each exam night previewed at dawn; fixed concealed-share of each night's budget (a `BALANCE` number); first-attempt concealment draws only from taught vectors. | M | HP-5 (plan 018) | §2 P4 |
+| **HP-10** | **Winter for real** — the one season verb-flip shipped fully at v1: desperate food-seeking raids (flipping `BALANCE.raid.winterReduction`'s *discount* into pressure) and the frozen river as a crossing — which requires the season-aware `walkable()` refactor (`state.js:31`), planned, not hand-waved. Other seasons stay numeric until post-HP0. | M-L | HP-5 (plan 019) | §7 |
 
-Supporting HP0 items (small, slot anywhere after their deps): trader
-demand-memory + Menace-decoupled pricing (S-M, was P2-5); ambitions v0 —
-Elder offers 1-of-2, reusing the `OBJECTIVES` shape (M, was P4-4); guaranteed
-event/arrival/ambition proc floor per game-day (S); first-loss content-unlock
-guarantee (S); event deck v0 at 15–25 templates gated on HP-2's structures
-(M).
+Supporting HP0 items: trader demand-memory + Menace-decoupled pricing (S-M),
+guaranteed event/arrival/ambition proc floor per game-day (S), and first-loss
+content-unlock guarantee (S) are **plan 020**; ambitions v0 — Elder offers
+1-of-2, reusing the `OBJECTIVES` shape (M) — and the event deck v0 at 15–25
+templates, gated on HP-2's structures (M), are **plan 021**.
 
 **HP0 exit test** (the only success criterion): playtesters who lose a
 settlement found the next one, and by settlement ~5 they talk about band
@@ -152,68 +136,72 @@ members by name (GDD P1/P6 falsifiers). If HP0 fails that test, revisit GDD
 
 ## Post-HP0 backlog (vLater, gated on HP0's playtest verdict)
 
-Held deliberately — each multiplies tuning surface or branch surface:
-slinger archetype (ranged/suppression modality) · bond/grudge mechanical
-teeth (adjacency, refusals) · equipment depth (armor/tools/durability; v1 is
-one weapon slot) · creeds 3–6 (v1 ships 0–2) · vector-modifying Trials (v1
-Trials are scalar) · spring/summer/autumn verb-flips (mud, wildfire+wind,
-gathering-hordes) · mid-raid resolve breaks (after test coverage exists) ·
-ruins beyond the canned site (full past-campaign persistence) · heirs/
-generations depth · workshop recipe depth (old P4-3 — only the armor axis
-survives, and only if it serves dusk tension) · infirmary structure ·
-epilogue-settlement mode (GDD open question 6).
+Held deliberately — each multiplies tuning or branch surface: slinger
+archetype (ranged/suppression modality) · bond/grudge mechanical teeth
+(adjacency, refusals) · equipment depth (armor/tools/durability; v1 is one
+weapon slot) · creeds 3–6 (v1 ships 0–2) · vector-modifying Trials · spring/
+summer/autumn verb-flips (mud, wildfire+wind, gathering-hordes) · mid-raid
+resolve breaks (after test coverage exists) · ruins beyond the canned site
+(full past-campaign persistence) · heirs/generations depth · workshop recipe
+depth (only the armor axis survives, and only if it serves dusk tension) ·
+infirmary structure · epilogue-settlement mode (GDD open question 6).
 
-## Phase 5 — Reach (when the game deserves it)
+## Reach (schedule by demand)
 
 | ID | Item | Effort | Notes |
 |----|------|--------|-------|
-| **P5-1** | **Colorblind + readability pass** — role identity on the map is color-only, HP bars are red/green with no numeral (`mapdraw.js:57-63`, `screens.js:524-533`). Glyph/letter overlays + palette toggle. | M | |
+| **P5-1** | **Colorblind + readability pass** — role identity on the map is color-only; HP bars are red/green with no numeral. Glyph/letter overlays + palette toggle. | M | |
 | **P5-2** | **Screen-reader affordance** — mirror log/notices into a visually-hidden `aria-live` region; label the canvas. | M | |
-| **P5-3** | ~~Responsive grid~~ — **promoted to P1-10** on user feedback. Residual item here: modal geometry duplicated between `widgets()` and `draw()` in party/workshop/orders modals (`screens.js:725-765,919-933`) — single-source each modal's box math when P1-5 touches them. | M | |
-| **P5-4** | **Touch support spike** — zero touch handlers exist; coarse-pointer devices get a landing page. Tap-to-cursor, drag-select, two-finger pan, minimal toolbar. | L | Only after P1-10; a fixed-size canvas can't ship on tablets anyway. |
-| **P5-5** | **Wheel pan deltaMode fix** — `ui.js:101-107` assumes pixel deltas; line-mode wheels round to zero. | S | Could fold into Phase 0 if convenient. |
+| **P5-4** | **Touch support spike** — zero touch handlers; coarse-pointer devices get a landing page. Tap-to-cursor, drag-select, two-finger pan, minimal toolbar. With the CRT container now a design constant, tablets get the scaled fixed-aspect canvas — acceptable; phones stay out of scope. | L | After P1-5. |
 
----
+(P5-3's residual — modal box-math duplication — moved into P1-5/plan 009.
+P5-5 shipped in plan 002.)
 
 ## Considered and set aside
 
-- **Seeded/persisted RNG** (`rng.js` seeds from `Date.now()`; saves don't capture
-  generator state, so reloading re-rolls outcomes). Save-scumming is arguably
-  by-design for this genre — autosave-at-dawn + delete-on-death already limits it.
-  Revisit only if reproducible runs are wanted for debugging or daily-challenge
-  modes (it would become a P3-4 enabler).
-- **Save `stats`/`mods` forward-compat backfill** — `migrate()` only merges defaults
-  for v0 saves; a future key added without a version bump would load as `undefined`
-  (NaN cascade). Not currently triggered. Fold the always-merge into whichever
-  Phase 1 test item touches `save.js` (P1-1) rather than tracking separately.
-- **New maps/biomes** — deliberately last-priority: the research is unanimous that
-  for a small team, modifier decks and settler variety buy far more replayability
-  per hour than map content (AtS shipped biomes last, through Early Access).
-- **Retiring the legacy `bed` tile tables** — dead migration cruft in three tables;
-  harmless. Bundle into any save-touching plan opportunistically.
+- **Seeded/persisted RNG** — save-scumming is plausibly by-design here;
+  autosave-at-dawn + delete-on-death already bounds it. Revisit only for
+  reproducible-bug or daily-challenge goals.
+- **New maps/biomes** — deliberately last: for a small team, decks and cast
+  variety buy more replayability per hour than map content (AtS shipped
+  biomes last). GDD §10 is binding: one biome, one map size; run variety must
+  come from site × season × menace × creed × cast.
+- **Legacy `bed` tile tables** — dead migration cruft, harmless; bundle into
+  any save-touching plan opportunistically.
+- **Fit-to-window layout** — rejected on owner decision (see Shipped); do not
+  re-propose. The CRT container is identity.
 
-## Sequencing logic
+## Sequencing — one line, on main
+
+Plans execute **sequentially on main** — no feature branches. Every plan ends
+in a commit checkpoint with all three gates green (`pnpm check`, `pnpm lint`,
+`pnpm test`); a staged plan may make one checkpoint per stage. The order is a
+topological sort of the dependency graph, architecture before content:
 
 ```
-P0 (days) → P1 tests (P1-1..3) → P1 refactors (P1-10 first, then P1-4..8)
-                                        │
-        HP-1 campaign store ────────────┤  (needs P1-1)
-        HP-2 cast v2 ───────────────────┤  (needs P1-2, P1-4)
-        HP-5 menace/scouting ───────────┤  (needs P1-4)
-             │                          │
-        HP-3 arrivals · HP-4 torchbearer · HP-6 sapper · HP-9 beacon · HP-10 winter
-             │
-        HP-7 endings → HP-8 campaign layer → **HP0 exit playtest**
-             │
-        post-HP0 backlog (gated on the playtest verdict)
-
-        P5 (reach) — independent, schedule by demand
+ 009 screens split (P1-5, + P5-3 residual)
+ 010 campaign store (HP-1)
+ 011 menace + scouting report (HP-5)
+ 012 cast v2 (HP-2)
+ 013 arrivals as decisions (HP-3)
+ 014 the torchbearer (HP-4)
+ 015 the sapper + counterplay pricing (HP-6)
+ 016 endings: Last Stand & the Torch (HP-7)
+ 017 the campaign layer (HP-8)
+ 018 the Beacon as priced wager (HP-9)
+ 019 winter for real (HP-10)
+ 020 supporting systems (trader memory · proc floor · first-loss unlock)
+ 021 ambitions v0 + event deck v0
+ ──► HP0 exit playtest (the gate everything past this waits on)
+ 022–025 enablement stragglers (P1-6..P1-9 — pull earlier if one blocks you)
+ 026–028 reach (P5-1 + P0-4 · P5-2 · P5-4)
 ```
 
-Three tracks parallelize after Phase 1: persistence (HP-1→3→7→8), the threat
-(HP-5→6→9→10), and the cast/dusk (HP-2→4). The torchbearer (HP-4) and the
-campaign layer (HP-8) are the two biggest new-UI items — land the P1-5
-screens split before them.
+Conceptually there are still three tracks (persistence HP-1→3→7→8, threat
+HP-5→6/9/10, cast/dusk HP-2→4) — the linear order above interleaves them
+without breaking any dependency, so you can always just execute the next
+plan. The playtest gate (open now) runs alongside; it steers tuning, not
+architecture.
 
 ## Research sources (abridged)
 
@@ -224,3 +212,4 @@ screens split before them.
 - Frostpunk (GDC 2019 "Why Make Games?"; Book of Laws analyses) · They Are Billions wave-design community analyses.
 - RimWorld Console Edition (PlayStation.Blog / DualShockers): gamepad-first UI lessons — every menu ≤3 steps deep.
 - Scope: Eremite's benchmarking method + 25% contingency (Game Developer); Odd Realm's player-interview loop (PC Gamer).
+- The Last Spell, State of Decay, Darkest Dungeon, Kingdom, Valheim: genre-record sources behind GDD v2's campaign flip (see GDD §1 and Appendix A).
