@@ -11,6 +11,7 @@
 //   LB/RB (4/5)         cycle tool: normal→build→demolish
 //   LT/RT (6/7)         game speed down / up
 //   Back (8)            help · Start (9) pause
+//   L3 (10)             ring/silence the alarm bell
 //   R3 (11)             toggle graphics mode
 import { dispatchKey } from './ui.js';
 import { notice } from './journal.js';
@@ -18,6 +19,13 @@ import { G } from './state.js';
 const handleKey = (k) => dispatchKey(k, {});
 
 const held = {}, nextT = {};
+
+// Which virtual key the A button should emit, given the game-screen state.
+// BUILD with a selection drag-paints; everything else is a plain confirm
+// (screens.js treats Enter as single-act in every mode).
+export function aButtonKey(mode, buildSel) {
+  return mode === 'BUILD' && buildSel ? 'Paint' : 'Enter';
+}
 
 function fire(id, cond, key, now, repeat) {
   if (cond) {
@@ -54,8 +62,9 @@ export function pollGamepad() {
   fire('down', b(13) || ly > 0.5, 'ArrowDown', now, true);
   fire('left', b(14) || lx < -0.5, 'ArrowLeft', now, true);
   fire('right', b(15) || lx > 0.5, 'ArrowRight', now, true);
-  fire('a', b(0) && G.mode === 'NORMAL', 'Enter', now, false);
-  fire('paint', b(0) && G.mode !== 'NORMAL', 'Paint', now, true);
+  const aKey = aButtonKey(G.mode, G.buildSel);
+  fire('a', b(0) && aKey === 'Enter', 'Enter', now, false);
+  fire('paint', b(0) && aKey === 'Paint', 'Paint', now, true);
   fire('b', b(1), 'Escape', now, false);
   fire('x', b(2), 'b', now, false);
   fire('y', b(3), 'w', now, false);
@@ -65,6 +74,7 @@ export function pollGamepad() {
   fire('rt', b(7), '=', now, false);
   fire('back', b(8), '?', now, false);
   fire('start', b(9), ' ', now, false);
+  fire('l3', b(10), 'r', now, false);
   fire('r3', b(11), 'v', now, false);
 }
 

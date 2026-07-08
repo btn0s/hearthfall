@@ -88,7 +88,7 @@ world sites, stouter morale, +25% legacy income.
 **Controller** (standard layout): stick/d-pad moves the cursor and
 navigates every menu · A confirm/act (hold to drag-paint) · B back ·
 X build menu · Y world map · LB/RB cycle tools · LT/RT game speed ·
-Start pause · Back help · R3 graphics toggle.
+L3 alarm bell · Start pause · Back help · R3 graphics toggle.
 
 **Roles.** Workers build/chop/mine/craft, farmers farm/cook/forage/fish,
 guards only fight. Settlers handle eating, sleeping and firefighting
