@@ -30,4 +30,4 @@ Screens are plain objects pushed onto the stack in `js/ui.js`; modals set `pause
 
 ## Key dimensions
 
-World map: 140×96 tiles (`js/data.js`). Cell grid: 100×45 (`js/gfx.js`). Viewport (camera window): 70×38 (`js/data.js`). Sidebar: 28 columns starting at x=72.
+World map: 140×96 tiles (`js/data.js`). Cell grid: 100×45 (`js/gfx.js`). Viewport (camera window): 70×38 (`js/data.js`). Sidebar: 28 columns starting at x=72. Simulation tuning lives in `js/balance.js` (`BALANCE`).

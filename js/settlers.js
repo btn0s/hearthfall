@@ -1,6 +1,7 @@
 // Settler AI, roles, housing, and combat vs raiders.
 import { rint, choice, chance } from './rng.js';
 import { MAP_W, MAP_H, T, NAMES, ROLE_ORDER, TRAITS, HOUSES, RAIDER_TYPES } from './data.js';
+import { BALANCE } from './balance.js';
 import { G, tileAt, walkable } from './state.js';
 import { findPath, mdist, DIRS } from './path.js';
 import { addLog, bumpMorale, moraleWorkMult, notice } from './journal.js';
@@ -165,18 +166,18 @@ function findJob(s) {
     const tl = tileAt(x, y);
     if (tl.claim) continue;
     let kind = null, work = 0, onTile = false, p = 9;
-    if (tl.burning) { kind = 'douse'; work = 6; p = -1; } // fire beats everything
+    if (tl.burning) { kind = 'douse'; work = BALANCE.work.douse; p = -1; } // fire beats everything
     else if (tl.build) {
       kind = 'build'; work = Math.ceil(buildDef(tl.build.id).work / G.mods.build);
       p = tl.build.id === 'farm' ? pri.buildFarm : pri.build;
-    } else if (tl.desig === 'chop') { kind = 'chop'; work = 18; p = pri.chop; }
-    else if (tl.desig === 'mine') { kind = 'mine'; work = 26; p = pri.mine; }
-    else if (tl.desig === 'forage' && !isWinter()) { kind = 'forage'; work = 10; p = pri.forage; }
-    else if (tl.desig === 'fish' && !(tl.fishCd > 0)) { kind = 'fish'; work = 14; p = pri.forage; }
-    else if (tl.t === 'farm' && (tl.growth || 0) >= 100) { kind = 'harvest'; work = 8; onTile = true; p = pri.harvest; }
-    else if (tl.t === 'kitchen' && G.res.food >= 4 && G.res.meals < pop * 2) { kind = 'cook'; work = 10; p = pri.cook; }
-    else if (tl.t === 'workshop' && G.craftQueue.length) { kind = 'craft'; work = 12; p = pri.craft; }
-    else if (structDamaged(tl) && !tl.burning && G.res[tl.t === 'wall_s' ? 'stone' : 'wood'] >= 1) { kind = 'repair'; work = 8; p = pri.repair; }
+    }     else if (tl.desig === 'chop') { kind = 'chop'; work = BALANCE.work.chop; p = pri.chop; }
+    else if (tl.desig === 'mine') { kind = 'mine'; work = BALANCE.work.mine; p = pri.mine; }
+    else if (tl.desig === 'forage' && !isWinter()) { kind = 'forage'; work = BALANCE.work.forage; p = pri.forage; }
+    else if (tl.desig === 'fish' && !(tl.fishCd > 0)) { kind = 'fish'; work = BALANCE.work.fish; p = pri.forage; }
+    else if (tl.t === 'farm' && (tl.growth || 0) >= BALANCE.crop.mature) { kind = 'harvest'; work = BALANCE.work.harvest; onTile = true; p = pri.harvest; }
+    else if (tl.t === 'kitchen' && G.res.food >= BALANCE.hunger.cookMinFood && G.res.meals < pop * BALANCE.pop.mealsTargetMult) { kind = 'cook'; work = BALANCE.work.cook; p = pri.cook; }
+    else if (tl.t === 'workshop' && G.craftQueue.length) { kind = 'craft'; work = BALANCE.work.craft; p = pri.craft; }
+    else if (structDamaged(tl) && !tl.burning && G.res[tl.t === 'wall_s' ? 'stone' : 'wood'] >= 1) { kind = 'repair'; work = BALANCE.work.repair; p = pri.repair; }
     if (kind === null) continue;
     const key = p * 10000 + mdist(s.x, s.y, x, y);
     if (key < bestKey) { bestKey = key; best = { kind, x, y, work, onTile, item: null }; }
@@ -196,8 +197,8 @@ function taskValid(t) {
     case 'mine': return tl.desig === 'mine' && tl.t === 'rock';
     case 'forage': return tl.desig === 'forage' && tl.t === 'bush' && !isWinter();
     case 'fish': return tl.desig === 'fish' && tl.t === 'water' && !(tl.fishCd > 0);
-    case 'harvest': return tl.t === 'farm' && (tl.growth || 0) >= 100;
-    case 'cook': return tl.t === 'kitchen' && G.res.food >= 2;
+    case 'harvest': return tl.t === 'farm' && (tl.growth || 0) >= BALANCE.crop.mature;
+    case 'cook': return tl.t === 'kitchen' && G.res.food >= BALANCE.hunger.cookCostFood;
     case 'craft': return tl.t === 'workshop' && !!t.item;
     case 'douse': return !!tl.burning;
     case 'repair': return structDamaged(tl) && !tl.burning && G.res[tl.t === 'wall_s' ? 'stone' : 'wood'] >= 1;
@@ -217,21 +218,29 @@ function nudgeOff(x, y) {
 function completeTask(s, t) {
   const tl = tileAt(t.x, t.y);
   delete tl.claim;
-  if (t.kind === 'chop') { tl.t = 'dirt'; delete tl.desig; delete tl.burning; G.res.wood += rint(2, 4); G.stats.chopped++; }
-  else if (t.kind === 'mine') { tl.t = 'dirt'; delete tl.desig; G.res.stone += rint(2, 3); }
-  else if (t.kind === 'forage') { tl.t = 'grass'; delete tl.desig; delete tl.burning; G.res.herbs += 2; }
-  else if (t.kind === 'fish') { G.res.food += isWinter() ? rint(1, 2) : rint(2, 4); tl.fishCd = 500; }
+  if (t.kind === 'chop') { tl.t = 'dirt'; delete tl.desig; delete tl.burning; G.res.wood += rint(...BALANCE.yields.chopWood); G.stats.chopped++; }
+  else if (t.kind === 'mine') { tl.t = 'dirt'; delete tl.desig; G.res.stone += rint(...BALANCE.yields.mineStone); }
+  else if (t.kind === 'forage') { tl.t = 'grass'; delete tl.desig; delete tl.burning; G.res.herbs += BALANCE.yields.forageHerbs; }
+  else if (t.kind === 'fish') {
+    const [a, b] = isWinter() ? BALANCE.yields.fishWinter : BALANCE.yields.fishNormal;
+    G.res.food += rint(a, b);
+    tl.fishCd = BALANCE.work.fishCooldown;
+  }
   else if (t.kind === 'douse') { delete tl.burning; }
   else if (t.kind === 'repair') {
     const mat = tl.t === 'wall_s' ? 'stone' : 'wood';
     if (G.res[mat] >= 1) {
       G.res[mat]--;
-      tl.hp = Math.min(structMax(tl.t), tl.hp + (mat === 'stone' ? 25 : 15));
+      tl.hp = Math.min(structMax(tl.t), tl.hp + (mat === 'stone' ? BALANCE.work.repairStoneHp : BALANCE.work.repairWoodHp));
     }
   }
-  else if (t.kind === 'harvest') { tl.growth = 0; G.res.food += rint(3, 5); }
+  else if (t.kind === 'harvest') { tl.growth = 0; G.res.food += rint(...BALANCE.yields.harvestFood); }
   else if (t.kind === 'cook') {
-    if (G.res.food >= 2) { G.res.food -= 2; G.res.meals += 3; G.stats.mealsCooked += 3; }
+    if (G.res.food >= BALANCE.hunger.cookCostFood) {
+      G.res.food -= BALANCE.hunger.cookCostFood;
+      G.res.meals += BALANCE.hunger.cookMealsOut;
+      G.stats.mealsCooked += BALANCE.hunger.cookMealsOut;
+    }
   }
   else if (t.kind === 'craft') {
     if (t.item === 'c_spear') { G.res.weapons++; addLog(`${s.name} forged a spear at the workshop.`, '#9ac0d8'); }
@@ -266,9 +275,9 @@ function execTask(s) {
     return;
   }
   let mult = moraleWorkMult();
-  if (s.trait === 'craven') mult *= 1.25;
-  if (s.trait === 'frail') mult *= 1.1;
-  if (s.trait === 'farmhand' && ['harvest', 'forage', 'fish'].includes(t.kind)) mult *= 1.33;
+  if (s.trait === 'craven') mult *= BALANCE.work.cravenMult;
+  if (s.trait === 'frail') mult *= BALANCE.work.frailMult;
+  if (s.trait === 'farmhand' && ['harvest', 'forage', 'fish'].includes(t.kind)) mult *= BALANCE.work.farmhandMult;
   t.work -= mult;
   if (t.work <= 0) completeTask(s, t);
 }
@@ -279,7 +288,7 @@ function stepRandom(s) {
 }
 
 function idle(s) {
-  if (mdist(s.x, s.y, G.camp.x, G.camp.y) <= 3) s.hp = Math.min(s.maxHp, s.hp + 0.03);
+  if (mdist(s.x, s.y, G.camp.x, G.camp.y) <= 3) s.hp = Math.min(s.maxHp, s.hp + BALANCE.energy.idleHeal);
   if (s.role === 'guard') {
     const post = nearestPost(s);
     const anchor = post || G.camp;
@@ -301,11 +310,11 @@ function hitRaider(r, dmg, s) {
       addLog(`${s.name} cut down the thief — the goods are recovered!`, '#8ad080');
     } else if (r.type === 'warlord') {
       G.stats.warlords++;
-      const coin = rint(6, 12);
+      const coin = rint(...BALANCE.yields.warlordCoin);
       G.res.coin += coin; G.res.weapons++;
       addLog(`☠ ${r.name} has fallen to ${s.name}! Spoils: ${coin} coin, a weapon.`, '#ffd860');
       addLog('The horde breaks and runs!', '#8ad080');
-      bumpMorale(15, 'warlord slain');
+      bumpMorale(BALANCE.morale.warlordKill, 'warlord slain');
       for (const x of G.raiders) x.fleeing = true;
     } else {
       addLog(`${s.name} slew a ${RAIDER_TYPES[r.type] ? RAIDER_TYPES[r.type].name : 'raider'}!`, '#8ad080');
@@ -315,7 +324,7 @@ function hitRaider(r, dmg, s) {
 
 function killSettler(s, how) {
   addLog(`☠ ${s.name} ${how}.`, '#e05040');
-  bumpMorale(hasPerk('stouthearts') ? -8 : -15, 'a death');
+  bumpMorale(hasPerk('stouthearts') ? BALANCE.morale.deathStouthearts : BALANCE.morale.death, 'a death');
   releaseTask(s); clearBed(s);
   G.settlers = G.settlers.filter(x => x !== s);
   if (!G.settlers.length) communeFallen();
@@ -327,7 +336,7 @@ export function woundSettler(s, dmg, how) {
   s.hp -= dmg;
   if (s.sleeping) { s.sleeping = false; clearBed(s); }
   if (s.hp > 0) return;
-  if (!s.downed && chance(0.5)) {
+  if (!s.downed && chance(BALANCE.combat.downChance)) {
     s.downed = true; s.hp = 1;
     releaseTask(s); clearBed(s);
     addLog(`☠ ${s.name} is DOWN — helpless where they fell!`, '#e08040');
@@ -340,46 +349,52 @@ export function woundSettler(s, dmg, how) {
 export function tickSettler(s) {
   if (s.away) return;
   if (s.failCd > 0) s.failCd--;
-  const hungerRate = 0.075 * (s.trait === 'glutton' ? 1.5 : 1) * (isWinter() ? 1.25 : 1);
-  s.hunger = Math.min(100, s.hunger + hungerRate);
+  const hungerRate = BALANCE.hunger.rate * (s.trait === 'glutton' ? BALANCE.hunger.gluttonMult : 1) * (isWinter() ? BALANCE.hunger.winterMult : 1);
+  s.hunger = Math.min(BALANCE.hunger.cap, s.hunger + hungerRate);
   if (!s.sleeping) {
-    const drain = (s.trait === 'nightowl' && isNight()) ? 0.015 : 0.06;
+    const drain = (s.trait === 'nightowl' && isNight()) ? BALANCE.energy.nightowlDrain : BALANCE.energy.drain;
     s.energy = Math.max(0, s.energy - drain);
   }
-  if (s.hunger >= 100) {
-    s.hp -= 0.06;
-    bumpMorale(-0.01);
+  if (s.hunger >= BALANCE.hunger.cap) {
+    s.hp -= BALANCE.hunger.starveHpDrain;
+    bumpMorale(BALANCE.hunger.starveMoraleDrain);
     if (!s.starving) { s.starving = true; addLog(`${s.name} is starving!`, '#e06040'); tip('starving'); }
   } else s.starving = false;
   if (s.hp <= 0) return killSettler(s, 'starved');
   const here = tileAt(s.x, s.y);
   if (here.burning) {
-    s.hp -= 0.15;
+    s.hp -= BALANCE.combat.fireStandingDmg;
     if (s.sleeping) { s.sleeping = false; clearBed(s); }
     if (s.hp <= 0) return killSettler(s, 'died in the flames');
   }
-  if (s.hp < 9 && G.res.meds > 0) {
-    G.res.meds--; s.hp = Math.min(s.maxHp, s.hp + 12);
+  if (s.hp < BALANCE.combat.medThreshold && G.res.meds > 0) {
+    G.res.meds--; s.hp = Math.min(s.maxHp, s.hp + BALANCE.combat.medHeal);
     addLog(`${s.name} used a medkit.`, '#68c088');
   }
-  if (s.hunger > 72) {
-    if (G.res.meals >= 1) { G.res.meals--; s.hunger = Math.max(0, s.hunger - 65); bumpMorale(0.3); }
-    else if (G.res.food >= 1) { G.res.food--; s.hunger = Math.max(0, s.hunger - 46); }
+  if (s.hunger > BALANCE.hunger.eatTrigger) {
+    if (G.res.meals >= 1) {
+      G.res.meals--;
+      s.hunger = Math.max(0, s.hunger - BALANCE.hunger.mealRelief);
+      bumpMorale(BALANCE.hunger.eatMoraleBump);
+    } else if (G.res.food >= 1) {
+      G.res.food--;
+      s.hunger = Math.max(0, s.hunger - BALANCE.hunger.foodRelief);
+    }
   }
 
   const houseHere = HOUSES[here.t] && here.sleepers && here.sleepers.includes(s.id) ? HOUSES[here.t] : null;
 
   if (s.downed) {
     // wounded: helpless, slowly crawling for shelter; back up at 8 hp
-    s.hp = Math.min(s.maxHp, s.hp + (houseHere ? houseHere.heal : 0.012));
-    if (s.hp >= 8) {
+    s.hp = Math.min(s.maxHp, s.hp + (houseHere ? houseHere.heal : BALANCE.combat.downHeal));
+    if (s.hp >= BALANCE.combat.downRecoverHp) {
       s.downed = false; clearBed(s);
       addLog(`${s.name} is back on their feet.`, '#8ad080');
       return;
     }
     s.crawlCd = (s.crawlCd || 0) - 1;
     if (s.crawlCd <= 0) {
-      s.crawlCd = 4;
+      s.crawlCd = BALANCE.combat.crawlCd;
       const bed = claimBed(s);
       if (bed && !(s.x === bed.x && s.y === bed.y)) moveToward(s, bed.x, bed.y, {});
     }
@@ -387,10 +402,10 @@ export function tickSettler(s) {
   }
 
   if (s.sleeping) {
-    s.energy = Math.min(100, s.energy + (houseHere ? houseHere.rest : 0.15));
+    s.energy = Math.min(BALANCE.energy.cap, s.energy + (houseHere ? houseHere.rest : BALANCE.energy.restRough));
     s.hp = Math.min(s.maxHp, s.hp + (houseHere ? houseHere.heal : 0.015));
-    if (!houseHere && isNight()) bumpMorale(-0.003); // sleeping rough wears on everyone
-    const wake = s.energy >= 99 || (!isNight() && s.energy > 70) || G.raidActive || adjacentRaider(s);
+    if (!houseHere && isNight()) bumpMorale(BALANCE.morale.roughSleep); // sleeping rough wears on everyone
+    const wake = s.energy >= BALANCE.energy.wakeFull || (!isNight() && s.energy > BALANCE.energy.wakeDay) || G.raidActive || adjacentRaider(s);
     if (wake) { s.sleeping = false; clearBed(s); }
     else return;
   }
@@ -399,8 +414,8 @@ export function tickSettler(s) {
   if (foe && s.trait !== 'craven') {
     if (s.atkcd > 0) s.atkcd--;
     else {
-      s.atkcd = 1;
-      const brave = s.trait === 'brave' ? 2 : 0;
+      s.atkcd = BALANCE.combat.guardAtkCd;
+      const brave = s.trait === 'brave' ? BALANCE.combat.braveBonus : 0;
       hitRaider(foe, rint(1, 3) + brave + (s.role === 'guard' ? rint(1, 2) + G.mods.guardDmg : 0) + weaponBonus(s), s);
     }
     return;
@@ -412,10 +427,13 @@ export function tickSettler(s) {
       const post = nearestPost(s);
       if (post && Math.max(Math.abs(s.x - post.x), Math.abs(s.y - post.y)) <= 2) {
         const r = nearestRaider(s);
-        const range = s.trait === 'keeneye' ? 8 : 6;
+        const range = s.trait === 'keeneye' ? BALANCE.combat.guardRangeKeeneye : BALANCE.combat.guardRange;
         if (r && mdist(r.x, r.y, s.x, s.y) <= range) {
           if (s.atkcd > 0) s.atkcd--;
-          else { s.atkcd = 2; hitRaider(r, rint(1, 3) + 1 + (s.trait === 'keeneye' ? 2 : 0), s); }
+          else {
+            s.atkcd = BALANCE.combat.guardRangedCd;
+            hitRaider(r, rint(1, 3) + 1 + (s.trait === 'keeneye' ? BALANCE.combat.keeneyeBonus : 0), s);
+          }
           return;
         }
       }
@@ -437,14 +455,14 @@ export function tickSettler(s) {
     }
   }
 
-  if (s.energy < 25 || (isNight() && s.energy < 70 && s.trait !== 'nightowl')) {
+  if (s.energy < BALANCE.energy.sleepTrigger || (isNight() && s.energy < BALANCE.energy.sleepNight && s.trait !== 'nightowl')) {
     const bed = claimBed(s);
     if (bed) {
       if (s.x === bed.x && s.y === bed.y) { s.sleeping = true; releaseTask(s); return; }
       moveToward(s, bed.x, bed.y, {});
       return;
     }
-    if (s.energy < 12) { s.sleeping = true; releaseTask(s); return; }
+    if (s.energy < BALANCE.energy.forceSleep) { s.sleeping = true; releaseTask(s); return; }
   }
 
   if (s.task) return execTask(s);

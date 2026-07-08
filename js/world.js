@@ -4,6 +4,7 @@
 import { G, addLog, makeSettler, walkable, releaseTask, communeFallen, updatePeak, bumpMorale, traitName } from './game.js';
 import { rint, chance, choice, rnd } from './rng.js';
 import { LOCTYPES, LOC_A, LOC_B } from './data.js';
+import { BALANCE } from './balance.js';
 import { hasPerk } from './meta.js';
 
 export const WORLD_W = 50, WORLD_H = 26;
@@ -151,17 +152,17 @@ function resolveExpedition(e, loc) {
   if (success) {
     loc.cleared = true;
     G.stats.sites++;
-    bumpMorale(4, 'victory abroad');
+    bumpMorale(BALANCE.morale.victoryAbroad, 'victory abroad');
     addLog(`⚑ The party cleared ${loc.name}!`, '#8ad080');
     for (const s of members) s.hp = Math.max(1, s.hp - rint(0, 4));
     if (loc.type === 'bandits') {
-      G.raidNext = Math.max(G.raidNext, G.day + 5);
+      G.raidNext = Math.max(G.raidNext, G.day + BALANCE.beacon.banditQuietDays);
       G.banditsCleared++;
       G.stats.bandits = G.banditsCleared;
       addLog('With the bandit camp burned, raids will quiet for a while.', '#8ad080');
     }
     if (loc.type === 'survivors') {
-      if (G.settlers.length < 16) {
+      if (G.settlers.length < BALANCE.pop.cap) {
         const s = makeSettler(G.camp.x, G.camp.y, 'worker');
         s.away = true;
         G.settlers.push(s);
@@ -171,7 +172,7 @@ function resolveExpedition(e, loc) {
       } else {
         addLog('The rescued folk find the commune full and settle down the road, grateful.', '#b8b2a0');
       }
-    } else if (chance(0.08) && G.settlers.length < 16) {
+    } else if (chance(0.08) && G.settlers.length < BALANCE.pop.cap) {
       const s = makeSettler(G.camp.x, G.camp.y, 'worker');
       s.away = true;
       G.settlers.push(s);
@@ -180,7 +181,7 @@ function resolveExpedition(e, loc) {
       addLog(`A stranger, ${s.name} (${traitName(s).toLowerCase()}), asked to walk home with the party.`, '#e8d8a0');
     }
   } else {
-    bumpMorale(-5, 'defeat abroad');
+    bumpMorale(BALANCE.morale.defeatAbroad, 'defeat abroad');
     addLog(`⚑ The party was overwhelmed at ${loc.name} and fell back.`, '#e08040');
     const survivors = members.length;
     for (const s of members) {
@@ -194,7 +195,7 @@ function resolveExpedition(e, loc) {
           addLog(`☠ ${s.name} died at ${loc.name}.`, '#e05040');
           e.ids = e.ids.filter(i => i !== s.id);
           G.settlers = G.settlers.filter(x => x !== s);
-          bumpMorale(-8, 'a death abroad');
+          bumpMorale(BALANCE.morale.deathAbroad, 'a death abroad');
         }
       }
     }

@@ -3,6 +3,7 @@ import { rint, choice, chance } from './rng.js';
 import {
   MAP_W, MAP_H, VIEW_W, VIEW_H, CIVS, TRADE, OBJECTIVES, CRAFTS, SEASON_LEN, ELDERS, ELDER_IDLE,
 } from './data.js';
+import { BALANCE } from './balance.js';
 import { genMap } from './map.js';
 import { hasPerk, perkLevel, addPoints } from './meta.js';
 import { G, makeState, inMap, tileAt, walkable } from './state.js';
@@ -40,7 +41,7 @@ export function moraleWhy() {
   const bits = [];
   const recent = {};
   for (const e of G.moraleEvents) {
-    if (e.day >= G.day - 3) recent[e.why] = (recent[e.why] || 0) + 1;
+    if (e.day >= G.day - BALANCE.morale.whyWindow) recent[e.why] = (recent[e.why] || 0) + 1;
   }
   for (const [why, c] of Object.entries(recent)) bits.push(c > 1 ? `${c}× ${why}` : why);
   const starving = G.settlers.filter(s => s.starving).length;
@@ -89,17 +90,18 @@ function edgeWalkable() {
 
 export function recruitEligible() {
   const pop = G.settlers.length;
-  return G.day > 2 && pop < 16 && !isWinter() && G.res.food + G.res.meals > pop * 3
-    && housingCap() > pop && G.morale >= 35;
+  return G.day >= BALANCE.pop.recruitMinDay && pop < BALANCE.pop.cap && !isWinter()
+    && G.res.food + G.res.meals > pop * BALANCE.pop.recruitFoodMult
+    && housingCap() > pop && G.morale >= BALANCE.morale.low;
 }
 
 export function recruitBlocker() {
   const pop = G.settlers.length;
-  if (pop >= 16) return 'the commune is full';
+  if (pop >= BALANCE.pop.cap) return 'the commune is full';
   if (isWinter()) return 'no one travels in winter';
-  if (G.res.food + G.res.meals <= pop * 3) return 'not enough food on the fire';
+  if (G.res.food + G.res.meals <= pop * BALANCE.pop.recruitFoodMult) return 'not enough food on the fire';
   if (housingCap() <= pop) return 'no roof to offer';
-  if (G.morale < 35) return 'word of misery spreads';
+  if (G.morale < BALANCE.morale.low) return 'word of misery spreads';
   return null;
 }
 
@@ -107,8 +109,8 @@ export function recruitBlocker() {
 export function communeDawn() {
   addLog(`— Day ${G.day} —`, '#7a8a9a');
   if (G.alarm) { G.alarm = false; addLog('Dawn sounds the all-clear — back to the fields.', '#8ad080'); }
-  G.moraleEvents = G.moraleEvents.filter(e => e.day >= G.day - 4);
-  if (G.beaconDay && G.day >= G.beaconDay + 3) { communeAscended(); return; }
+  G.moraleEvents = G.moraleEvents.filter(e => e.day >= G.day - BALANCE.morale.eventWindow);
+  if (G.beaconDay && G.day >= G.beaconDay + BALANCE.beacon.holdDays) { communeAscended(); return; }
   if (G.day > 1 && (G.day - 1) % SEASON_LEN === 0) {
     const s = season();
     addLog(`❧ ${s.name} has come.`, s.fg);
@@ -116,17 +118,17 @@ export function communeDawn() {
     if (s.id === 'winter') { addLog('Crops sleep and bushes stand bare. Live off your stores.', '#a8c8e8'); tip('winter'); }
     if (s.id === 'spring' && G.day > SEASON_LEN * 3) {
       G.stats.winters++;
-      bumpMorale(10, 'endured winter');
+      bumpMorale(BALANCE.morale.winterEnd, 'endured winter');
       addLog('◆ The thaw! The commune endured the winter.', '#8ad080');
     }
   }
   const pop = G.settlers.length;
-  if (G.morale < 35) tip('morale');
-  if (G.morale < 25 && pop >= 3 && chance(0.6)) {
+  if (G.morale < BALANCE.morale.low) tip('morale');
+  if (G.morale < BALANCE.morale.desertMax && pop >= BALANCE.recruit.desertMinPop && chance(BALANCE.recruit.desertChance)) {
     const cands = settlersPresent();
     if (cands.length) {
       const s = choice(cands);
-      const food = Math.min(G.res.food, 5), coin = Math.min(G.res.coin, 3);
+      const food = Math.min(G.res.food, BALANCE.recruit.desertFoodMax), coin = Math.min(G.res.coin, BALANCE.recruit.desertCoinMax);
       G.res.food -= food; G.res.coin -= coin;
       releaseTask(s);
       G.settlers = G.settlers.filter(x => x !== s);
@@ -143,10 +145,10 @@ export function communeDawn() {
         G.settlers.push(s);
         updatePeak();
         addLog(`☺ ${s.name} (${traitName(s).toLowerCase()}), a wanderer, has joined the commune!`, '#e8d8a0');
-        if (G.settlers.length === 6) addLog('◆ Commune tier II reached — watch posts, workshop, kitchen unlocked!', '#c8a0e8');
-        if (G.settlers.length === 9) addLog('◆ Commune tier III reached — stone walls unlocked!', '#c8a0e8');
+        if (G.settlers.length === BALANCE.pop.tier2) addLog('◆ Commune tier II reached — watch posts, workshop, kitchen unlocked!', '#c8a0e8');
+        if (G.settlers.length === BALANCE.pop.tier3) addLog('◆ Commune tier III reached — stone walls unlocked!', '#c8a0e8');
       }
-      G.recruitDays = G.morale >= 75 ? 1 : 2;
+      G.recruitDays = G.morale >= BALANCE.morale.high ? BALANCE.recruit.daysHigh : BALANCE.recruit.daysNormal;
     }
   }
   if (isHordeDay(G.day)) {
@@ -154,8 +156,8 @@ export function communeDawn() {
     tip('horde');
   } else if (G.day >= G.raidNext) { addLog('⚠ Scouts report raiders nearby — they strike at dusk!', '#e0a040'); tip('raidwarn'); }
   else if (G.day === G.raidNext - 1) addLog('Rumors of raiders gathering. Prepare defenses.', '#e0c060');
-  if (G.beaconDay) addLog(`☼ The Beacon burns — ${G.beaconDay + 3 - G.day} day${G.beaconDay + 3 - G.day === 1 ? '' : 's'} to hold.`, '#ffe060');
-  if (G.res.food + G.res.meals < pop * 2) tip('foodlow');
+  if (G.beaconDay) addLog(`☼ The Beacon burns — ${G.beaconDay + BALANCE.beacon.holdDays - G.day} day${G.beaconDay + BALANCE.beacon.holdDays - G.day === 1 ? '' : 's'} to hold.`, '#ffe060');
+  if (G.res.food + G.res.meals < pop * BALANCE.pop.foodlowMult) tip('foodlow');
   if (daysToWinter() === 1) addLog('❄ Winter arrives tomorrow.', '#a8c8e8');
 }
 
@@ -183,8 +185,8 @@ export function igniteBeacon() {
   if (G.beaconDay) return false;
   if (!G.tiles.some(tl => tl.t === 'beacon')) { notice('Build the Beacon first'); return false; }
   G.beaconDay = G.day;
-  bumpMorale(20, 'the Beacon lit');
-  G.raidNext = Math.min(G.raidNext, G.day + 1);
+  bumpMorale(BALANCE.morale.beaconLit, 'the Beacon lit');
+  G.raidNext = Math.min(G.raidNext, G.day + BALANCE.beacon.raidPullDays);
   addLog('☼ THE BEACON IS LIT! Every eye for miles turns this way.', '#ffe060');
   addLog('Raids intensify (+2) — hold the commune 3 days for victory.', '#ffe060');
   tip('beacon');
@@ -223,7 +225,7 @@ export function elderCounsel() {
       return season().id === 'autumn' && fi.stock < fi.winterNeed
         && mk(`Winter will want ~${fi.winterNeed} food. We hold ${Math.round(fi.stock)}. Stockpile.`, 'wary');
     },
-    () => G.morale < 35 && mk(`Hearts are breaking — ${moraleWhy() || 'a long, hard road'}.`, 'wary'),
+    () => G.morale < BALANCE.morale.low && mk(`Hearts are breaking — ${moraleWhy() || 'a long, hard road'}.`, 'wary'),
     () => recruitBlocker() === 'no roof to offer' && mk('Wanderers pass us by — no roof to offer. Raise a tent.', 'calm'),
     () => {
       const camp = G.world && G.world.locs.find(l => l.type === 'bandits' && !l.cleared && l.diff >= 12);
@@ -244,7 +246,7 @@ export function elderCounsel() {
 }
 
 function traderTick() {
-  if (!G.trader && G.min === 540 && G.day >= 3 && G.day % 4 === 2 && !G.raidActive) {
+  if (!G.trader && G.min === BALANCE.time.traderArrive && G.day >= BALANCE.time.traderMinDay && G.day % 4 === 2 && !G.raidActive) {
     const spots = openAround(G.camp.x, G.camp.y, 3);
     if (spots.length) {
       G.trader = { x: spots[spots.length - 1].x, y: spots[spots.length - 1].y };
@@ -252,7 +254,7 @@ function traderTick() {
       tip('trader');
     }
   }
-  if (G.trader && G.min === 1140) {
+  if (G.trader && G.min === BALANCE.time.traderLeave) {
     G.trader = null;
     if (G.mode === 'TRADE') G.mode = 'NORMAL';
     addLog('The trader packed up and moved on.', '#b8b2a0');
@@ -263,22 +265,24 @@ export function tickGame() {
   if (G.gameOver || !G.tiles) return null;
   G.min++;
   let dawn = false;
-  if (G.min >= 1440) { G.min = 0; G.day++; }
-  if (G.min === 360) dawn = true;
+  if (G.min >= BALANCE.time.minutesPerDay) { G.min = 0; G.day++; }
+  if (G.min === BALANCE.time.dawnMinute) dawn = true;
   if (G.gameOver) return { dawn };
-  if (G.min === 1150 && (G.day >= G.raidNext || isHordeDay(G.day)) && !G.raidActive) spawnRaid();
-  if (G.day === 1 && G.min === 1200) tip('night');
-  if (G.min % 15 === 0) checkObjectives();
+  if (G.min === BALANCE.time.raidSpawnMinute && (G.day >= G.raidNext || isHordeDay(G.day)) && !G.raidActive) spawnRaid();
+  if (G.day === 1 && G.min === BALANCE.time.nightStart) tip('night');
+  if (G.min % BALANCE.time.objectiveInterval === 0) checkObjectives();
   traderTick();
   fireTick();
   let cheer = 0;
   for (const s of G.settlers) cheer += s.trait === 'cheerful' ? 1 : s.trait === 'grim' ? -1 : 0;
-  const base = 60 + cheer * 2 + (hasPerk('stouthearts') ? 5 : 0) + (G.beaconDay ? 5 : 0);
-  G.morale += (base - G.morale) * 0.0004;
-  if (!isNight() && !isWinter() && G.min % 3 === 0) {
-    const rate = 0.23 * G.mods.crop;
+  const base = BALANCE.morale.base + cheer * BALANCE.morale.cheerfulBonus
+    + (hasPerk('stouthearts') ? BALANCE.morale.stoutheartsBaseBonus : 0)
+    + (G.beaconDay ? BALANCE.morale.beaconBaseBonus : 0);
+  G.morale += (base - G.morale) * BALANCE.morale.drift;
+  if (!isNight() && !isWinter() && G.min % BALANCE.time.cropGrowthInterval === 0) {
+    const rate = BALANCE.crop.growthRate * G.mods.crop;
     for (const tl of G.tiles) {
-      if (tl.t === 'farm' && (tl.growth || 0) < 100) tl.growth = (tl.growth || 0) + rate;
+      if (tl.t === 'farm' && (tl.growth || 0) < BALANCE.crop.mature) tl.growth = (tl.growth || 0) + rate;
     }
   }
   tickSettlers();
@@ -288,15 +292,15 @@ export function tickGame() {
     if (G.raidTimer <= 0) for (const r of G.raiders) r.fleeing = true;
     if (!G.raiders.length) {
       G.raidActive = false;
-      G.raidNext = G.day + rint(2, 4) + (isWinter() ? 2 : 0);
+      G.raidNext = G.day + rint(BALANCE.raid.cooldownMin, BALANCE.raid.cooldownMax) + (isWinter() ? BALANCE.raid.cooldownWinterExtra : 0);
       G.stats.raids++;
       if (G.raidIsHorde) {
         G.raidIsHorde = false;
         G.stats.hordes++;
-        bumpMorale(12, 'horde broken');
+        bumpMorale(BALANCE.morale.hordeBroken, 'horde broken');
         addLog('The horde scatters. The warlord is dead or fled.', '#8ad080');
       } else {
-        bumpMorale(6, 'raid repelled');
+        bumpMorale(BALANCE.morale.raidRepelled, 'raid repelled');
         addLog('The raiders flee into the night.', '#8ad080');
       }
     }
@@ -442,7 +446,7 @@ export function newGame(civId) {
   if (hasPerk('greenthumb')) G.mods.crop *= 1 + 0.1 * perkLevel('greenthumb');
   if (hasPerk('timber')) G.mods.wallHp *= 1.2;
   if (hasPerk('friends')) G.mods.deal = 0.2;
-  if (hasPerk('stouthearts')) G.morale = 75;
+  if (hasPerk('stouthearts')) G.morale = BALANCE.morale.high;
   const { tiles, camp } = genMap();
   G.tiles = tiles; G.camp = camp;
   centerCam(camp.x, camp.y);

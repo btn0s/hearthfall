@@ -1,6 +1,7 @@
 // Raider AI, raid spawning, and siege behavior.
 import { rint, choice, chance } from './rng.js';
 import { MAP_W, MAP_H, T, FLAMMABLE, RAIDER_TYPES, WARLORD_NAMES } from './data.js';
+import { BALANCE } from './balance.js';
 import { G, inMap, tileAt, walkable } from './state.js';
 import { findPath, mdist } from './path.js';
 import { addLog, bumpMorale } from './journal.js';
@@ -45,9 +46,9 @@ function stepRaider(r) {
   }
   r.x = n.x; r.y = n.y; r.path.shift();
   if (tl.t === 'trap') {
-    r.hp -= 7;
+    r.hp -= BALANCE.raid.trapDmg;
     addLog(`A ${RAIDER_TYPES[r.type].name} stumbled into a spike trap!`, '#e0b050');
-    if (chance(0.65)) { tl.t = 'dirt'; delete tl.hp; }
+    if (chance(BALANCE.raid.trapDestroyChance)) { tl.t = 'dirt'; delete tl.hp; }
     if (r.hp <= 0) {
       G.raiders = G.raiders.filter(x => x !== r);
       G.stats.kills++;
@@ -81,10 +82,10 @@ function nearestBurnable(r) {
 // Skirmishers slip through open gaps to the stockpile at the fire, grab what
 // they can carry, and run. Sealed out, they hunt whoever is in the open.
 function skirmisherBrain(r) {
-  if (r.hp < 5 && !r.loot) { r.fleeing = true; return; }
+  if (r.hp < BALANCE.raid.skirmisherFleeHp && !r.loot) { r.fleeing = true; return; }
   if (mdist(r.x, r.y, G.camp.x, G.camp.y) === 1) {
-    const food = Math.min(G.res.food, rint(4, 8));
-    const coin = Math.min(G.res.coin, rint(2, 5));
+    const food = Math.min(G.res.food, rint(...BALANCE.yields.skirmisherFood));
+    const coin = Math.min(G.res.coin, rint(...BALANCE.yields.skirmisherCoin));
     if (food + coin > 0) {
       G.res.food -= food; G.res.coin -= coin;
       r.loot = {};
@@ -97,13 +98,13 @@ function skirmisherBrain(r) {
     return;
   }
   r.pathAge = (r.pathAge || 0) + 1;
-  if (!r.path || !r.path.length || r.pathAge > 10) {
+  if (!r.path || !r.path.length || r.pathAge > BALANCE.raid.skirmisherPathStale) {
     r.path = findPath(r.x, r.y, G.camp.x, G.camp.y, { adjacent: true, noDoor: true });
     r.pathAge = 0;
     if (!r.path) {
       const tgt = nearestLiveSettler(r);
       r.path = tgt ? findPath(r.x, r.y, tgt.x, tgt.y, { adjacent: true, noDoor: true }) : null;
-      if (!r.path) { if (chance(0.5)) stepRandom(r); return; } // sealed out: skulk
+      if (!r.path) { if (chance(BALANCE.raid.skirmisherSkulkChance)) stepRandom(r); return; } // sealed out: skulk
     }
   }
   stepRaider(r);
@@ -119,21 +120,21 @@ function torcherBrain(r) {
     if (!tl.burning && FLAMMABLE.has(tl.t) && tl.t !== 'tree' && tl.t !== 'bush') {
       ignite(x, y);
       // announce the first torch loudly, then only the occasional one
-      if (!r.litAny || chance(0.25)) addLog(`¡ A torch-bearer set your ${T[tl.t].name} alight!`, '#ff9030');
+      if (!r.litAny || chance(BALANCE.raid.torchLogChance)) addLog(`¡ A torch-bearer set your ${T[tl.t].name} alight!`, '#ff9030');
       r.litAny = true;
       tip('fire');
-      r.igniteCd = 6; r.path = null;
+      r.igniteCd = BALANCE.raid.torchIgniteCd; r.path = null;
       return;
     }
   }
   r.pathAge = (r.pathAge || 0) + 1;
-  if (!r.path || !r.path.length || r.pathAge > 12) {
+  if (!r.path || !r.path.length || r.pathAge > BALANCE.raid.torcherPathStale) {
     const tgt = nearestBurnable(r);
     r.path = tgt ? findPath(r.x, r.y, tgt.x, tgt.y, { adjacent: true, noDoor: true }) : null;
     r.pathAge = 0;
     if (!r.path) {
-      if (chance(0.2)) r.fleeing = true;
-      else if (chance(0.5)) stepRandom(r);
+      if (chance(BALANCE.raid.torchFleeChance)) r.fleeing = true;
+      else if (chance(BALANCE.raid.torchWanderChance)) stepRandom(r);
       return;
     }
   }
@@ -161,7 +162,7 @@ function tickRaider(r) {
       G.raiders = G.raiders.filter(x => x !== r);
       if (r.loot) {
         addLog('§ The thief escaped with the stolen goods.', '#e08040');
-        bumpMorale(-3, 'goods stolen');
+        bumpMorale(BALANCE.morale.goodsStolen, 'goods stolen');
       }
       return;
     }
@@ -169,7 +170,7 @@ function tickRaider(r) {
       const ex = r.x < MAP_W / 2 ? 0 : MAP_W - 1;
       r.path = findPath(r.x, r.y, ex, r.y, { raider: true });
       r.fleeT = (r.fleeT || 0) + 1;
-      if (!r.path && r.fleeT > 30) { G.raiders = G.raiders.filter(x => x !== r); return; }
+      if (!r.path && r.fleeT > BALANCE.raid.fleeTimeout) { G.raiders = G.raiders.filter(x => x !== r); return; }
       if (!r.path) return;
     }
     stepRaider(r);
@@ -180,7 +181,7 @@ function tickRaider(r) {
   if (r.type === 'torcher') return torcherBrain(r);
 
   r.pathAge = (r.pathAge || 0) + 1;
-  if (!r.path || !r.path.length || r.pathAge > 14) {
+  if (!r.path || !r.path.length || r.pathAge > BALANCE.raid.pathStale) {
     const tgt = nearestLiveSettler(r);
     if (!tgt) { r.fleeing = true; return; }
     r.path = findPath(r.x, r.y, tgt.x, tgt.y, { raider: true, adjacent: true });
@@ -192,12 +193,13 @@ function tickRaider(r) {
 
 // Later raids mix in specialists; hordes stack brutes behind a warlord.
 function raidComposition(n, horde) {
+  const R = BALANCE.raid;
   const types = [];
   for (let i = 0; i < n; i++) {
     let t = 'raider';
-    if (G.day >= 6 && chance(horde ? 0.3 : 0.18)) t = 'brute';
-    else if (G.day >= 9 && chance(0.25)) t = 'skirmisher';
-    else if (G.day >= 11 && chance(0.2)) t = 'torcher';
+    if (G.day >= R.bruteFromDay && chance(horde ? R.bruteHordeChance : R.bruteChance)) t = 'brute';
+    else if (G.day >= R.skirmisherFromDay && chance(R.skirmisherChance)) t = 'skirmisher';
+    else if (G.day >= R.torcherFromDay && chance(R.torcherChance)) t = 'torcher';
     types.push(t);
   }
   return types;
@@ -207,9 +209,9 @@ export function spawnRaid() {
   // sizing lives in raidEstimate so the sidebar forecast can't drift from truth
   const est = raidEstimate(G.day);
   const horde = est.horde;
-  let n = est.n - (horde ? 1 : 0) + rint(0, 1); // warlord spawns separately; small jitter
+  let n = est.n - (horde ? 1 : 0) + rint(0, BALANCE.raid.jitterMax); // warlord spawns separately; small jitter
 
-  const twoFront = horde || (G.day >= 14 && chance(0.4));
+  const twoFront = horde || (G.day >= BALANCE.raid.twoFrontFromDay && chance(BALANCE.raid.twoFrontChance));
   const sideA = rint(0, 3);
   const sideB = twoFront ? (sideA + rint(1, 3)) % 4 : sideA;
   const spots = [];
@@ -222,7 +224,7 @@ export function spawnRaid() {
     else { x = MAP_W - 1; y = rint(1, MAP_H - 2); }
     if (walkable(x, y)) spots.push({ x, y });
   }
-  if (!spots.length) { G.raidNext = G.day + 1; return; }
+  if (!spots.length) { G.raidNext = G.day + BALANCE.raid.respawnDelayDays; return; }
 
   const types = raidComposition(spots.length, horde);
   spots.forEach((p, i) => G.raiders.push(makeRaider(p.x, p.y, types[i] || 'raider')));
@@ -233,7 +235,7 @@ export function spawnRaid() {
     G.raidIsHorde = true;
   }
   G.raidActive = true;
-  G.raidTimer = horde ? 560 : 420;
+  G.raidTimer = horde ? BALANCE.raid.timerHorde : BALANCE.raid.timerNormal;
   if (G.trader) { G.trader = null; if (G.mode === 'TRADE') G.mode = 'NORMAL'; addLog('The trader fled at the first war-horn.', '#e0c060'); }
   const sides = ['north', 'south', 'west', 'east'];
   const from = twoFront ? `${sides[sideA]} AND ${sides[sideB]}` : sides[sideA];

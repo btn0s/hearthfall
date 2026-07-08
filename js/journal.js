@@ -1,12 +1,13 @@
 // Commune log, notices, and morale.
 import { G } from './state.js';
+import { BALANCE } from './balance.js';
 import { timeStr } from './seasons.js';
 
 export function bumpMorale(n, why) {
   G.morale = Math.max(0, Math.min(100, G.morale + n));
-  if (why && Math.abs(n) >= 3) {
+  if (why && Math.abs(n) >= BALANCE.morale.eventMin) {
     G.moraleEvents.push({ day: G.day, why, n });
-    if (G.moraleEvents.length > 6) G.moraleEvents.shift();
+    if (G.moraleEvents.length > BALANCE.morale.eventCap) G.moraleEvents.shift();
   }
 }
 
@@ -20,6 +21,10 @@ export function notice(text) {
 }
 
 export const moraleLabel = () =>
-  G.morale >= 75 ? 'high' : G.morale >= 50 ? 'steady' : G.morale >= 35 ? 'low' : 'BREAKING';
+  G.morale >= BALANCE.morale.high ? 'high'
+    : G.morale >= BALANCE.morale.steady ? 'steady'
+      : G.morale >= BALANCE.morale.low ? 'low' : 'BREAKING';
 
-export const moraleWorkMult = () => G.morale >= 75 ? 1.15 : G.morale < 35 ? 0.8 : 1;
+export const moraleWorkMult = () =>
+  G.morale >= BALANCE.morale.high ? BALANCE.morale.workHigh
+    : G.morale < BALANCE.morale.low ? BALANCE.morale.workLow : 1;

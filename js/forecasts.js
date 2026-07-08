@@ -1,18 +1,20 @@
 // Raid and food forecasts surfaced to the UI.
 import { G } from './state.js';
 import { SEASON_LEN } from './data.js';
+import { BALANCE } from './balance.js';
 import { isWinter, isHordeDay } from './seasons.js';
 
 export function raidEstimate(day = G.day) {
   const horde = isHordeDay(day);
   const uncleared = G.world ? G.world.locs.filter(l => l.type === 'bandits' && !l.cleared).length : 0;
-  let n = 2 + Math.floor((day - 2) / 3) - Math.floor(G.banditsCleared / 2);
-  if (day >= 8) n += Math.min(3, uncleared);
-  if (isWinter()) n = Math.max(2, n - 2);
-  if (G.beaconDay) n += 2;
-  const cap = day > 20 ? 10 + Math.floor((day - 20) / 4) : 10;
-  n = Math.max(2, Math.min(cap, n));
-  if (horde) n = Math.max(n + 3, 4 + Math.floor(day / 3)) + 1;
+  const R = BALANCE.raid;
+  let n = R.sizeBase + Math.floor((day - R.sizeDayStart) / R.sizeDayStep) - Math.floor(G.banditsCleared / R.banditReductionDiv);
+  if (day >= R.unclearedFromDay) n += Math.min(R.unclearedMax, uncleared);
+  if (isWinter()) n = Math.max(R.sizeBase, n - R.winterReduction);
+  if (G.beaconDay) n += R.beaconBonus;
+  const cap = day > R.capLateFromDay ? R.capEarly + Math.floor((day - R.capLateFromDay) / R.capLateStep) : R.capEarly;
+  n = Math.max(R.sizeBase, Math.min(cap, n));
+  if (horde) n = Math.max(n + R.hordeBonus, R.hordeFloorBase + Math.floor(day / R.hordeFloorDiv)) + R.warlordExtra;
   return { n, horde };
 }
 
@@ -34,13 +36,14 @@ export function tonightInfo() {
 }
 
 export function foodInfo() {
+  const H = BALANCE.hunger;
   let burn = 0;
   for (const s of G.settlers) {
     if (s.away) continue;
-    burn += 0.075 * (s.trait === 'glutton' ? 1.5 : 1) * (isWinter() ? 1.25 : 1);
+    burn += H.rate * (s.trait === 'glutton' ? H.gluttonMult : 1) * (isWinter() ? H.winterMult : 1);
   }
-  const perDay = burn * 1440 / 46;
-  const stock = G.res.food + G.res.meals * (65 / 46);
-  const winterNeed = Math.ceil(G.settlers.length * 0.075 * 1.25 * 1440 / 46 * SEASON_LEN);
+  const perDay = burn * BALANCE.time.minutesPerDay / H.foodRelief;
+  const stock = G.res.food + G.res.meals * (H.mealRelief / H.foodRelief);
+  const winterNeed = Math.ceil(G.settlers.length * H.rate * H.winterMult * BALANCE.time.minutesPerDay / H.foodRelief * SEASON_LEN);
   return { perDay, days: perDay > 0 ? stock / perDay : 99, stock, winterNeed };
 }
