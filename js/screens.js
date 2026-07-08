@@ -23,7 +23,9 @@ import { drawBig } from './glyph.js';
 import { makeListScreen } from './ui/menu.js';
 
 const { GRID_W, GRID_H, PANEL_BG, put, str, fillBg, dim, GFX, MM, toggleGfx, toggleMinimap } = gfx;
-const SB_X = 74;
+const SB_X = VIEW_W + 2;   // border column + gutter before sidebar text
+const SB_W = GRID_W - SB_X; // drawable sidebar width (28 cols at classic grid)
+const SB_INNER = SB_W - 1;  // width for framed widgets (elder box, morale bar)
 const LOG_Y = VIEW_H + 1;
 
 // ---------------------------------------------------------------- shared bits
@@ -189,7 +191,7 @@ const TOOL_MODES = ['NORMAL', 'BUILD', 'CANCEL'];
 
 // single source of truth for sidebar row positions (draw + hit share this)
 function sidebarLayout() {
-  let y = 11; // 0-6 header block (season, morale, tonight), 7-10 resources
+  let y = 9; // header through food + resource line (rows 0–8)
   if (G.raidActive) y++;
   if (G.alarm && !G.raidActive) y++;
   if (G.trader) y++;
@@ -199,12 +201,12 @@ function sidebarLayout() {
   y += 6; // the elder's window: border + portrait rows + border
   const setHdrY = y;
   const settlerY = y + 1;
-  let shown = Math.min(G.settlers.length, 12);
+  let shown = Math.min(G.settlers.length, 14);
   const expedRows = G.expeditions.length ? 1 + G.expeditions.length : 0;
   // minimap fills the slack below, shrinking to fit; a crowded settler list
   // gives up rows (down to 6) before the map is squeezed out entirely
   let mmY = settlerY + shown + expedRows + 1; // header row; map starts mmY+1
-  let mmH = Math.min(15, 40 - (mmY + 1));     // rows of map, floor above the slim hint block
+  let mmH = Math.min(17, 40 - (mmY + 1));     // rows of map, floor above the slim hint block
   if (MM.on && mmH < 7) {
     const give = Math.min(7 - mmH, Math.max(0, shown - 6));
     shown -= give; mmY -= give; mmH += give;
@@ -212,7 +214,7 @@ function sidebarLayout() {
   const y2 = settlerY + shown;
   const expedY = G.expeditions.length ? y2 : -1;
   const mmOn = MM.on && mmH >= 7;
-  return { objY, setHdrY, settlerY, shown, expedY, mmY, mmH, mmOn, mmW: 25 };
+  return { objY, setHdrY, settlerY, shown, expedY, mmY, mmH, mmOn, mmW: SB_INNER };
 }
 
 function wrapText(text, w) {
@@ -298,13 +300,13 @@ export function makeGameScreen() {
       const ws = [];
       const lay = sidebarLayout();
       ws.push({ // the morale meter explains itself on click
-        rect: { x: SB_X, y: 4, w: 25, h: 1 },
+        rect: { x: SB_X, y: 4, w: SB_INNER, h: 1 },
         onClick: () => notice(moraleWhy() || 'Spirits are level — nothing weighs on them.'),
       });
       G.settlers.slice(0, lay.shown).forEach((s, i) => {
         if (!settlerActive(s)) return;
         ws.push({
-          rect: { x: SB_X, y: lay.settlerY + i, w: 25, h: 1 },
+          rect: { x: SB_X, y: lay.settlerY + i, w: SB_INNER, h: 1 },
           onClick: () => { const cur = G.settlers.find(x => x.id === s.id); if (cur) cycleRole(cur); },
         });
       });
@@ -454,29 +456,27 @@ export function makeGameScreen() {
       const spd = G.paused ? ((f >> 4) % 2 ? '‖ PAUSED' : '        ') : '▶'.repeat(G.speed);
       str(SB_X, y++, `Day ${G.day}  ${timeStr()}  ${spd}`, G.paused ? '#e0a040' : '#b8b2a0');
       const tier = communeTier();
-      const tierStr = tier === 3 ? 'Tier III' : tier === 2 ? 'Tier II (9☺→III)' : 'Tier I (6☺→II)';
-      str(SB_X, y++, `${civ ? civ.name.replace('The ', '') : ''} · ${tierStr}`.slice(0, 26), civ ? civ.fg : '#b8b2a0');
+      const tierStr = tier === 3 ? 'Tier III' : tier === 2 ? 'Tier II' : 'Tier I';
+      str(SB_X, y++, `${civ ? civ.name.replace('The ', '') : ''} · ${tierStr}`.slice(0, SB_W), civ ? civ.fg : '#b8b2a0');
       const sn = season();
       const dayInSeason = ((G.day - 1) % 5) + 1;
       const dtw = daysToWinter();
       const winterNote = isWinter() ? 'endure' : `❄ in ${dtw}d`;
-      str(SB_X, y++, `${sn.ch} ${sn.name} ${dayInSeason}/5 · ${winterNote}`.slice(0, 26), sn.fg);
+      str(SB_X, y++, `${sn.ch} ${sn.name} ${dayInSeason}/5 · ${winterNote}`.slice(0, SB_W), sn.fg);
       const mb = Math.max(0, Math.min(8, Math.round(G.morale / 100 * 8)));
       const mCol = G.morale >= 75 ? '#8ad080' : G.morale >= 50 ? '#c8c2b0' : G.morale >= 35 ? '#e0c060' : '#e05040';
       str(SB_X, y, 'Morale ', '#8a94a2');
       str(SB_X + 7, y, '█'.repeat(mb) + '░'.repeat(8 - mb), mCol);
       str(SB_X + 16, y++, ` ${moraleLabel()}`.slice(0, 10), mCol);
       const tn = tonightInfo();
-      str(SB_X, y++, tn.label.slice(0, 26), tn.urgent && (f >> 3) % 2 ? '#ffd870' : tn.fg);
-      str(SB_X, y++, '─'.repeat(25), '#3a3f4a');
+      str(SB_X, y++, tn.label.slice(0, SB_W), tn.urgent && (f >> 3) % 2 ? '#ffd870' : tn.fg);
+      str(SB_X, y++, '─'.repeat(SB_INNER), '#3a3f4a');
       const R = G.res;
       const fi = foodInfo();
       const burnStr = fi.perDay < 10 ? fi.perDay.toFixed(1) : String(Math.round(fi.perDay));
       const daysStr = fi.days > 30 ? '30+' : fi.days.toFixed(fi.days < 10 ? 1 : 0);
-      str(SB_X, y++, `Food ${R.food}+${R.meals}m −${burnStr}/d ·${daysStr}d`.slice(0, 26), fi.days < 3 ? '#e05040' : fi.days < 6 ? '#e0c060' : '#c8c2b0');
-      str(SB_X, y++, `Wood ${String(R.wood).padEnd(4)}Stone ${R.stone}`, '#a8a296');
-      str(SB_X, y++, `Scrap ${String(R.scrap).padEnd(3)}Herbs ${R.herbs}`, '#a8a296');
-      str(SB_X, y++, `Coin ${String(R.coin).padEnd(4)}Wpn ${R.weapons}  Med ${R.meds}`, '#d8c860');
+      str(SB_X, y++, `Food ${R.food}+${R.meals}m −${burnStr}/d ·${daysStr}d`.slice(0, SB_W), fi.days < 3 ? '#e05040' : fi.days < 6 ? '#e0c060' : '#c8c2b0');
+      str(SB_X, y++, `W${R.wood} St${R.stone} Sc${R.scrap} H${R.herbs} · ¤${R.coin} W${R.weapons} M${R.meds}`.slice(0, SB_W), '#a8a296');
       if (G.raidActive) str(SB_X, y++, `⚠ ${G.raidIsHorde ? 'HORDE' : 'RAIDERS'}: ${G.raiders.length}`, (f >> 3) % 2 ? '#ff5040' : '#a03028');
       if (G.alarm && !G.raidActive) str(SB_X, y++, '♪ ALARM — r stands down', (f >> 3) % 2 ? '#e0c060' : '#907830');
       if (G.trader) str(SB_X, y++, '¤ trader in camp — e trade', '#ffd860');
@@ -490,7 +490,7 @@ export function makeGameScreen() {
       // the elder's window: a framed portrait whose face carries the mood
       const el = elderCounsel();
       const flash = G.objFlash > performance.now();
-      const bx = SB_X, by = lay.objY, bw = 25, pbg = '#131622';
+      const bx = SB_X, by = lay.objY, bw = SB_INNER, pbg = '#131622';
       fillBg(bx, by, bw, 6, pbg);
       const bcol = flash ? '#3a5a42' : el.mood === 'alarm' ? '#6a3030' : '#3a3f4a';
       put(bx, by, '╭', bcol, pbg); put(bx + bw - 1, by, '╮', bcol, pbg);
@@ -512,13 +512,13 @@ export function makeGameScreen() {
       }
       // the counsel, spoken beside the face
       const prog = el.prog ? ` (${el.prog[0]}/${el.prog[1]})` : '';
-      const lines = wrapText(el.text + prog, 15);
+      const lines = wrapText(el.text + prog, bw - 9);
       for (let i = 0; i < 4; i++) {
-        str(bx + 9, by + 1 + i, (lines[i] || '').slice(0, 15), i === 0 ? (flash ? '#8ad080' : '#e8d8b0') : '#b8b2a0', pbg);
+        str(bx + 9, by + 1 + i, (lines[i] || '').slice(0, bw - 9), i === 0 ? (flash ? '#8ad080' : '#e8d8b0') : '#b8b2a0', pbg);
       }
       const grow = recruitEligible() ? ` ☺${G.recruitDays}d` : '';
       const shdr = `─ SETTLERS ${G.settlers.length} · ⌂${housingCap()}${grow} `;
-      str(SB_X, lay.setHdrY, (shdr + '─'.repeat(Math.max(0, 25 - shdr.length))).slice(0, 26), '#3a3f4a');
+      str(SB_X, lay.setHdrY, (shdr + '─'.repeat(Math.max(0, SB_INNER - shdr.length))).slice(0, SB_W), '#3a3f4a');
       G.settlers.slice(0, lay.shown).forEach((s, i) => {
         const yy = lay.settlerY + i;
         const bar = hpBar(s.hp, s.maxHp, 6);
@@ -528,10 +528,10 @@ export function makeGameScreen() {
         else if (s.sleeping) status = 'zzz';
         else if (s.starving) status = 'HUNGRY';
         else if (s.task) status = s.task.kind;
-        str(SB_X, yy, `☺${s.name.padEnd(7).slice(0, 7)}${ROLE_LETTER[s.role]} `, s.away ? '#6a7484' : (ROLE_COLORS[s.role] || '#d8d2c0'));
-        str(SB_X + 10, yy, '█'.repeat(bar.filled), bar.col);
-        str(SB_X + 10 + bar.filled, yy, '░'.repeat(6 - bar.filled), '#3a3f4a');
-        str(SB_X + 17, yy, status.slice(0, 8), '#8a94a2');
+        str(SB_X, yy, `☺${s.name.padEnd(9).slice(0, 9)}${ROLE_LETTER[s.role]} `, s.away ? '#6a7484' : (ROLE_COLORS[s.role] || '#d8d2c0'));
+        str(SB_X + 12, yy, '█'.repeat(bar.filled), bar.col);
+        str(SB_X + 12 + bar.filled, yy, '░'.repeat(6 - bar.filled), '#3a3f4a');
+        str(SB_X + 19, yy, status.slice(0, 9), '#8a94a2');
       });
       if (lay.expedY >= 0) {
         str(SB_X, lay.expedY, '─ EXPEDITIONS ' + '─'.repeat(11), '#3a3f4a');
@@ -542,9 +542,9 @@ export function makeGameScreen() {
       }
       // two context lines at the bottom; the full reference lives in Esc → help
       let hy = GRID_H - 2;
-      str(SB_X, hy - 1, '─'.repeat(25), '#3a3f4a');
+      str(SB_X, hy - 1, '─'.repeat(SB_INNER), '#3a3f4a');
       if (G.mode === 'BUILD') {
-        str(SB_X, hy++, `BUILD: ${G.buildSel ? G.buildSel.name : '←→ tabs · a-e'}`.slice(0, 26), '#e8c860');
+        str(SB_X, hy++, `BUILD: ${G.buildSel ? G.buildSel.name : '←→ tabs · a-e'}`.slice(0, SB_W), '#e8c860');
         str(SB_X, hy, G.buildSel ? 'click/drag map · Esc back' : 'Enter/click pick · Esc', '#8a94a2');
       } else if (G.mode === 'CANCEL') {
         str(SB_X, hy++, 'DEMOLISH: click structures', '#e8c860');
@@ -574,7 +574,7 @@ export function makeGameScreen() {
       if (!lay.mmOn) return;
       const x0 = SB_X, y0 = lay.mmY + 1;
       const mmW = lay.mmW, mmH = lay.mmH;
-      str(SB_X, lay.mmY, '─ MAP (n) ' + '─'.repeat(15), '#3a3f4a');
+      str(SB_X, lay.mmY, '─ MAP (n) ' + '─'.repeat(Math.max(0, SB_INNER - 10)), '#3a3f4a');
       const sx = MAP_W / mmW, sy = MAP_H / mmH;
       for (let my = 0; my < mmH; my++) for (let mx = 0; mx < mmW; mx++) {
         const t = tileAt(Math.min(MAP_W - 1, (mx * sx + sx / 2) | 0), Math.min(MAP_H - 1, (my * sy + sy / 2) | 0)).t;

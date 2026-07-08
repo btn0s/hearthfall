@@ -13,7 +13,8 @@ starting, honor its STOP conditions, and update your row when done.
 | 002 | Six small verified fixes (camera, modifiers, pause, rescue cap, sort, wheel) | P0-3, P0-5..P0-8, P5-5 | P1 | S | — | DONE |
 | 003 | CI, AGENTS.md, README code map | P0-9..P0-11 | P1 | S | — | DONE |
 | 004 | Characterization tests: legacy scoring, perks, save/migration | P1-1 | P1 | M | — | DONE |
-| 005 | Fit-to-window layout: bigger cells, viewport, sidebar | P1-10 | P1 (user priority) | L | 001–004 recommended, not required | TODO |
+| 005 | Fixed-grid sidebar layout (revised P1-10) | P1-10 | P1 (user priority) | M | 001–004 recommended | DONE |
+| ~~005~~ | ~~Fit-to-window layout~~ | ~~P1-10~~ | — | — | — | REJECTED (owner: keep CRT container) |
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -22,9 +23,9 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - 001–004 are mutually independent and can run in parallel (002 and 004 both
   touch `js/save.js`; land 002 first or rebase — 004's Step 4 subsumes 002's
   deferred stats/mods note).
-- 005 is staged and touches many files; run it **alone**, after the others are
-  merged, so its Stage-1 "no visual change" gate is meaningful. It must land
-  **before** the roadmap's P1-5 `screens.js` split.
+- 005 (revised) decompresses the sidebar inside the fixed 100×45 grid — the
+  original fit-to-window plan was rejected. It should still land **before**
+  the roadmap's P1-5 `screens.js` split.
 - Not yet planned (next batch, in roadmap order): P1-2/P1-3 (combat/economy and
   raid/path tests), P1-4 (balance table), P1-5 (screens split), then the
   **HP0 milestone** (ROADMAP.md — the GDD v2 Hypothesis Playable, starting

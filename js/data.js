@@ -1,7 +1,7 @@
 // Static game data: tile defs, buildings, civs, perks, trade, names, locations.
 
 export const MAP_W = 140, MAP_H = 96;   // world size
-export const VIEW_W = 72, VIEW_H = 38;  // on-screen viewport (camera window)
+export const VIEW_W = 70, VIEW_H = 38;  // on-screen viewport (camera window)
 export const CELL_W = 11, CELL_H = 19;
 
 // Every tile has a `t` key into this table. Structures carry hp on the tile.

@@ -81,9 +81,9 @@ describe('save/load', () => {
     delete raw.cam;
     store['hearthfall.save'] = JSON.stringify(raw);
     expect(loadGame()).toBe(true);
-    expect(G.cam.x).toBeGreaterThan(0);   // 70 - 72/2 = 34
+    expect(G.cam.x).toBeGreaterThan(0);   // 70 - 70/2 = 35
     expect(G.cam.y).toBeGreaterThan(0);   // 48 - 38/2 = 29
-    expect(G.cam).toEqual({ x: 34, y: 29 });
+    expect(G.cam).toEqual({ x: 35, y: 29 });
   });
 });
 
