@@ -89,6 +89,7 @@ export function setupInput(canvas) {
   let panDrag = null;     // middle-drag camera pan
 
   window.addEventListener('keydown', e => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return; // browser/OS chords are not game input
     dispatchKey(e.key, { shift: e.shiftKey });
     if ([' ', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key)) e.preventDefault();
   });
@@ -102,7 +103,9 @@ export function setupInput(canvas) {
     const s = top();
     if (s && s.pan) {
       e.preventDefault();
-      s.pan(Math.round(e.deltaX / 25), Math.round(e.deltaY / 25));
+      // deltaMode: 0 = pixels, 1 = lines, 2 = pages
+      const k = e.deltaMode === 1 ? 1 : e.deltaMode === 2 ? 10 : 1 / 25;
+      s.pan(Math.round(e.deltaX * k), Math.round(e.deltaY * k));
     }
   }, { passive: false });
 

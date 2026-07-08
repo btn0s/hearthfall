@@ -1,6 +1,6 @@
 // Versioned run persistence — only sim state crosses the boundary.
 import { choice } from './rng.js';
-import { MAP_W, MAP_H, TRAITS } from './data.js';
+import { MAP_W, MAP_H, VIEW_W, VIEW_H, TRAITS } from './data.js';
 import { G, makeState } from './state.js';
 
 const SAVE_KEY = 'hearthfall.save';
@@ -13,14 +13,14 @@ function toSaveData() {
   const { settlers, raiders, expeditions, tiles, log, moraleEvents, craftQueue, res, stats, mods,
     civ, camp, world, usedNames, day, min, speed, paused, gameOver, victory, legacyEarned, bonusLines,
     objIdx, objFlash, morale, beaconDay, alarm, recruitDays,
-    mode: _mode, cam: _cam, raidNext, raidActive, raidTimer,
+    mode: _mode, cam, raidNext, raidActive, raidTimer,
     raidIsHorde, banditsCleared, trader, nextId } = G;
-  void _mode; void _cam;
+  void _mode;
   return {
     version: SAVE_VERSION,
     civ, mods, stats, objIdx, objFlash,
     day, min, speed, paused, gameOver, victory, legacyEarned, bonusLines,
-    tiles, camp, res, settlers, raiders, log, morale, moraleEvents, beaconDay,
+    tiles, camp, cam, res, settlers, raiders, log, morale, moraleEvents, beaconDay,
     alarm, recruitDays, raidNext, raidActive, raidTimer, raidIsHorde, banditsCleared,
     world, expeditions, craftQueue, trader, nextId,
     usedNames: [...usedNames],
@@ -51,6 +51,13 @@ function migrate(d) {
       if (e.power == null && e.party) e.power = e.party.reduce((a, m) => a + 4 + m.hp * 0.25 + (m.role === 'guard' ? 3 : 0), 0);
     }
     d.version = SAVE_VERSION;
+  }
+  if (!d.cam || typeof d.cam.x !== 'number') {
+    const cx = d.camp ? d.camp.x : 0, cy = d.camp ? d.camp.y : 0;
+    d.cam = {
+      x: Math.max(0, Math.min(MAP_W - VIEW_W, Math.round(cx - VIEW_W / 2))),
+      y: Math.max(0, Math.min(MAP_H - VIEW_H, Math.round(cy - VIEW_H / 2))),
+    };
   }
   d.buildSel = null; d.notice = null; d.tip = null; d.sel = null;
   if (!(d.usedNames instanceof Set)) d.usedNames = new Set(d.usedNames || []);

@@ -64,6 +64,27 @@ describe('save/load', () => {
     expect(loadGame()).toBe(true);
     expect(G.day).toBe(5);
   });
+
+  it('round-trips the camera position', () => {
+    G.camp = { x: 70, y: 48 };
+    G.cam = { x: 33, y: 21 };
+    save();
+    G.cam = { x: 0, y: 0 };
+    expect(loadGame()).toBe(true);
+    expect(G.cam).toEqual({ x: 33, y: 21 });
+  });
+
+  it('centers the camera on camp for saves without one', () => {
+    G.camp = { x: 70, y: 48 };
+    save();
+    const raw = JSON.parse(store['hearthfall.save']);
+    delete raw.cam;
+    store['hearthfall.save'] = JSON.stringify(raw);
+    expect(loadGame()).toBe(true);
+    expect(G.cam.x).toBeGreaterThan(0);   // 70 - 72/2 = 34
+    expect(G.cam.y).toBeGreaterThan(0);   // 48 - 38/2 = 29
+    expect(G.cam).toEqual({ x: 34, y: 29 });
+  });
 });
 
 describe('homeAtDusk', () => {

@@ -10,7 +10,7 @@ starting, honor its STOP conditions, and update your row when done.
 | Plan | Title | Roadmap IDs | Priority | Effort | Depends on | Status |
 |------|-------|-------------|----------|--------|------------|--------|
 | 001 | Controller can build, demolish, ring the alarm | P0-1, P0-2 | P1 | S | — | DONE |
-| 002 | Six small verified fixes (camera, modifiers, pause, rescue cap, sort, wheel) | P0-3, P0-5..P0-8, P5-5 | P1 | S | — | TODO |
+| 002 | Six small verified fixes (camera, modifiers, pause, rescue cap, sort, wheel) | P0-3, P0-5..P0-8, P5-5 | P1 | S | — | DONE |
 | 003 | CI, AGENTS.md, README code map | P0-9..P0-11 | P1 | S | — | TODO |
 | 004 | Characterization tests: legacy scoring, perks, save/migration | P1-1 | P1 | M | — | TODO |
 | 005 | Fit-to-window layout: bigger cells, viewport, sidebar | P1-10 | P1 (user priority) | L | 001–004 recommended, not required | TODO |

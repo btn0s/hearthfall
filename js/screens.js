@@ -902,7 +902,7 @@ function makeWorkshopModal() {
       .join(', ');
   };
   const scr = {
-    id: 'workshop', modal: true, focus: 0,
+    id: 'workshop', modal: true, pausesSim: true, focus: 0,
     update() { if (!G.tiles.some(tl => tl.t === 'workshop')) pop(); }, // burned down mid-order
     widgets: CRAFTS.map((c, i) => ({
       rect: { x: x0, y: y0 + 3 + i, w, h: 1 },
@@ -945,7 +945,7 @@ function makeWorkshopModal() {
 function makeTradeModal() {
   const x0 = 4, y0 = 4, w = 40;
   const scr = {
-    id: 'trade', modal: true, focus: 0,
+    id: 'trade', modal: true, pausesSim: true, focus: 0,
     update() { if (!G.trader) pop(); }, // trader left / raid scared them off
     widgets: TRADE.map((_, i) => ({
       rect: { x: x0, y: y0 + 2 + i, w, h: 1 },

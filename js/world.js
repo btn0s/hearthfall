@@ -161,12 +161,16 @@ function resolveExpedition(e, loc) {
       addLog('With the bandit camp burned, raids will quiet for a while.', '#8ad080');
     }
     if (loc.type === 'survivors') {
-      const s = makeSettler(G.camp.x, G.camp.y, 'worker');
-      s.away = true;
-      G.settlers.push(s);
-      updatePeak();
-      e.ids.push(s.id);
-      addLog(`Rescued ${s.name} (${traitName(s).toLowerCase()}) — they will join the commune!`, '#e8d8a0');
+      if (G.settlers.length < 16) {
+        const s = makeSettler(G.camp.x, G.camp.y, 'worker');
+        s.away = true;
+        G.settlers.push(s);
+        updatePeak();
+        e.ids.push(s.id);
+        addLog(`Rescued ${s.name} (${traitName(s).toLowerCase()}) — they will join the commune!`, '#e8d8a0');
+      } else {
+        addLog('The rescued folk find the commune full and settle down the road, grateful.', '#b8b2a0');
+      }
     } else if (chance(0.08) && G.settlers.length < 16) {
       const s = makeSettler(G.camp.x, G.camp.y, 'worker');
       s.away = true;

@@ -35,7 +35,7 @@ export function genMap() {
     E[idx(x, y)] = elevA(x, y) * 0.68 + elevB(x, y) * 0.32;
     M[idx(x, y)] = moistA(x, y) * 0.68 + moistB(x, y) * 0.32;
   }
-  const pct = (arr, p) => { const s = [...arr].sort(); return s[(s.length * p) | 0]; };
+  const pct = (arr, p) => { const s = [...arr].sort((a, b) => a - b); return s[(s.length * p) | 0]; };
   const eWater = pct(E, 0.07), eShore = pct(E, 0.11), eRocky = pct(E, 0.94);
   const mForest = pct(M, 0.80), mWood = pct(M, 0.70);
 
