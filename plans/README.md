@@ -26,4 +26,8 @@ commit checkpoint.
 
 | Plan | Title | Roadmap ID | Status |
 |------|-------|-----------|--------|
+| 029 | Core seam + TypeScript baseline (screens split · TS migration · barrel retirement · `js/engine/` boundary) | HR-0 | TODO |
 | — | *next: HR-1 hard wipe* | HR-1 | UNPLANNED |
+
+Numbering continues from the retired sequence (001–028) so history stays
+unambiguous.

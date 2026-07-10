@@ -39,6 +39,7 @@ lives there — everything later builds on roads, placement, and evolution.
 
 | ID | Item | DESIGN.md | Effort | Notes |
 |----|------|-----------|--------|-------|
+| **HR-0** | **Core seam + TypeScript baseline** — take the screens split (cherry-pick `5e256ea`), migrate `.js`→`.ts` with a typed `G` (parity first, strictness ratcheted), retire the `game.js` barrel (47 re-exports) during the rename, carve `js/engine/` (gfx/rng/glyph to start) behind an ESLint import-boundary rule. Zero behavior change; four checkpoints. | — (engineering) | M-L | **Plan 029.** Foundation for everything below; `ui`/`gamepad`/`path` earn engine residency later via seams. |
 | **HR-1** | **Hard wipe** — remove the legacy shop and run-scoring payout: collapse deletes the save, new settlement, same rules. Retire `META` perks/points/civ-unlock spending and the legacy/civ screens; keep a dry lifetime-stats record only if free. Simplify title flow (New / Continue). | Intent, failure | M | The identity commit — first, so nothing below builds against the meta. |
 | **HR-2** | **Heat + tonight's bill** — visible pressure ceiling (rises with days, noise, claims/light, camps standing; falls by action) and nights sized to visible strength under it; **per-age floor hook from day one** (a `BALANCE.heat.floorByAge` table HR-5 fills in). One-sentence-explainable nights. Replaces the day-count formula in `js/forecasts.js`. | "Pressure, Beacon, failure" | M-L | Reference: archived plan 011 (`js/menace.js`) — re-derive simplified; Heat is one number + a short cause list. |
 | **HR-3** | **Roads + connection** — road tiles (cheap, fast for everyone *including raiders*, so the road graph + gate decide how the night arrives); buildings want a road path to the hearth (**connected**) for full output; unroaded = slow on top of risky. Raider pathing prefers roads. | "Building the town" | M | New system, no archive reference. Pathfinding weights + a connectivity check; keep both legible on inspect. |
@@ -59,12 +60,10 @@ routes — wrong game.
 
 ## Engineering backlog (design-neutral, pull when useful)
 
-- **Screens split** — the executed refactor cherry-picks cleanly
-  (`git cherry-pick 5e256ea`, parent is exactly `95e0170`; zero behavior
-  change). Worth taking before HR-4's and HR-9's UI work.
+- ~~Screens split~~ / ~~`game.js` barrel~~ — **absorbed into HR-0 (plan 029)**.
 - Job-scan index (matters more once roads/evolution add tile state), renderer
-  dedup, renderer idle, `game.js` barrel — the old P1-6..P1-9 findings hold;
-  retired drafts at `git show 95e0170:plans/`.
+  dedup, renderer idle — the old P1-7..P1-9 findings hold; retired drafts at
+  `git show 95e0170:plans/` (re-derive against post-HR-0 TypeScript paths).
 - Readability/colorblind pass, morale-why key path, screen-reader mirror,
   touch spike — reach items, unchanged in substance.
 
@@ -79,11 +78,10 @@ factions / elections · fit-to-window layout (CRT container is identity).
 ## Sequencing
 
 ```
-HR-1 wipe → HR-2 heat+bill → HR-3 roads → HR-4 placement+evolution
-   → HR-5 ages+charters+feasts → HR-6 gate → HR-7 rings/away-work
-   → HR-8 beacon exam → HR-9 collapse+dawn board → HR-10 winter
-   → v0 exit playtest
-(cherry-pick 5e256ea screens split any time before HR-4's UI)
+HR-0 seam+TS (plan 029) → HR-1 wipe → HR-2 heat+bill → HR-3 roads
+   → HR-4 placement+evolution → HR-5 ages+charters+feasts → HR-6 gate
+   → HR-7 rings/away-work → HR-8 beacon exam
+   → HR-9 collapse+dawn board → HR-10 winter → v0 exit playtest
 ```
 
 Plans get drafted per-item into [plans/](plans/README.md) as execution
