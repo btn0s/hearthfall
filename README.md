@@ -7,6 +7,13 @@ State of Decay community pressure, Fallout 4 base building, and a
 death-feeds-the-next-run legacy loop. No dependencies, no build step: plain
 ES modules rendered to a canvas character grid.
 
+> **Direction (2026-07-09):** the game is being refined toward a pure
+> colony-survival sandbox — one settlement map, labor as the bottleneck,
+> dusk as the audit of the board you built, Beacon win, hard-wipe collapse.
+> The legacy shop described below is slated for removal. See
+> [DESIGN.md](DESIGN.md) (canonical design) and [ROADMAP.md](ROADMAP.md)
+> (the route).
+
 New players are guided in by **the Elder** — one voice in the sidebar
 that speaks the tutorial objectives, fires one-time tips at key moments,
 and afterwards always names the commune's most pressing problem (their
